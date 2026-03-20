@@ -1,0 +1,132 @@
+/* ═══════════════════════════════════════
+   Global Resets & Base (index.css)
+   Loaded before App.css; provides the
+   minimal foundation.
+   ═══════════════════════════════════════ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  /* Smooth scroll for in-page anchor links */
+  scroll-behavior: smooth;
+
+  /* Prevent iOS text-size inflation */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+
+  /* Use the system font stack until App.css loads Inter */
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    Oxygen-Sans, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  background: #0a0a0f;
+  color: #e0e0e8;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+  /* Prevent overscroll bounce on mobile */
+  overscroll-behavior: none;
+}
+
+/* ── Accessible focus ring ── */
+:focus-visible {
+  outline: 2px solid #6c63ff;
+  outline-offset: 2px;
+}
+
+/* Remove the default focus ring for pointer interactions */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ── Media defaults ── */
+img,
+svg,
+video {
+  display: block;
+  max-width: 100%;
+}
+
+/* ── Remove default list styles ── */
+ul,
+ol {
+  list-style: none;
+}
+
+/* ── Inherit fonts on form elements ── */
+input,
+button,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+/* ── Remove default button styling artefacts ── */
+button {
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+/* ── Prevent textarea resize beyond container ── */
+textarea {
+  resize: vertical;
+}
+
+/* ── Reduced motion preference ── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Custom scrollbar (Webkit) ── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* ── Firefox scrollbar ── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
+}
+
+/* ── Selection highlight ── */
+::selection {
+  background: rgba(108, 99, 255, 0.35);
+  color: #fff;
+}

@@ -1,0 +1,22 @@
+port: 7880
+bind_addresses:
+  - 127.0.0.1
+rtc:
+  port_range_start: 50000
+  port_range_end: 50200
+  tcp_port: 7881
+  use_external_ip: false
+
+keys:
+  APIsknt45f55b023edf: 23d6de5835812fd4f73121ea9de0fcec8a54
+
+logging:
+  level: info
+
+room:
+  auto_create: true
+  empty_timeout: 300
+  max_participants: 20
+
+turn:
+  enabled: false

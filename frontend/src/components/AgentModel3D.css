@@ -1,0 +1,397 @@
+/* ════════════════════════════════════════
+   3D Agent Stage
+   ════════════════════════════════════════ */
+
+.agent-3d-stage {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-height: 680px;
+  height: 680px;
+  border-radius: 26px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 12%, rgba(34, 211, 238, 0.16), transparent 32%),
+    radial-gradient(circle at 50% 88%, rgba(168, 85, 247, 0.08), transparent 30%),
+    radial-gradient(circle at 50% 50%, rgba(11, 20, 38, 0.42), transparent 58%),
+    linear-gradient(180deg, rgba(8, 13, 25, 0.98), rgba(5, 8, 16, 1));
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  box-shadow:
+    0 34px 72px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 58px rgba(34, 211, 238, 0.07);
+}
+
+.agent-3d-stage-chrome {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(7, 12, 24, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px);
+}
+
+.agent-3d-stage-kicker {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.agent-3d-stage-summary {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+/* Scan-line overlay */
+.agent-3d-stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(34, 211, 238, 0.015) 2px,
+    rgba(34, 211, 238, 0.015) 4px
+  );
+}
+
+.agent-3d-stage::before {
+  content: '';
+  position: absolute;
+  inset: auto 4% 0 4%;
+  height: 46%;
+  pointer-events: none;
+  z-index: 1;
+  background:
+    radial-gradient(circle at 50% 100%, rgba(52, 211, 153, 0.1), transparent 42%),
+    linear-gradient(180deg, transparent, rgba(7, 12, 24, 0.78));
+}
+
+.agent-3d-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+/* ── Agent label overlay ── */
+
+.agent-3d-label {
+  position: absolute;
+  bottom: 18px;
+  z-index: 3;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  pointer-events: auto;
+  width: min(260px, 42vw);
+}
+
+.agent-3d-name {
+  font-family: 'Orbitron', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2.4px;
+  text-transform: uppercase;
+  padding: 6px 13px;
+  border-radius: 999px;
+  backdrop-filter: blur(14px);
+  background: rgba(7, 12, 24, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.agent-3d-name.laira {
+  color: #a855f7;
+  border-color: rgba(168, 85, 247, 0.3);
+  text-shadow: 0 0 8px rgba(168, 85, 247, 0.5);
+}
+
+.agent-3d-name.loki {
+  color: #22d3ee;
+  border-color: rgba(34, 211, 238, 0.3);
+  text-shadow: 0 0 8px rgba(34, 211, 238, 0.5);
+}
+
+.agent-3d-state {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.1px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.agent-3d-state.idle,
+.agent-3d-state.disconnected {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.agent-3d-state.speaking {
+  color: #22d3ee;
+  animation: state-pulse 1s ease-in-out infinite;
+}
+
+.agent-3d-state.thinking {
+  color: #ffb432;
+  animation: state-pulse 1.5s ease-in-out infinite;
+}
+
+.agent-3d-state.calling_openclaw {
+  color: #22d3ee;
+  animation: state-pulse 1.2s ease-in-out infinite;
+}
+
+.agent-3d-state.vision_processing {
+  color: #c084fc;
+  animation: state-pulse 1.3s ease-in-out infinite;
+}
+
+.agent-3d-state.listening {
+  color: #39ff14;
+}
+
+.agent-3d-state.error {
+  color: #ff4466;
+  animation: state-pulse 0.9s ease-in-out infinite;
+}
+
+.agent-3d-detail,
+.agent-3d-meta {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.agent-3d-detail {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.78);
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(7, 12, 24, 0.84);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(14px);
+}
+
+.agent-3d-detail.error {
+  color: #ff9cb0;
+  border-color: rgba(255, 68, 102, 0.25);
+}
+
+.agent-3d-meta {
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+@keyframes state-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ── Action buttons on labels ── */
+
+.agent-3d-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.agent-3d-actions button {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(10, 14, 26, 0.8);
+  color: rgba(255, 255, 255, 0.6);
+  transition: all 0.2s;
+  backdrop-filter: blur(4px);
+}
+
+.agent-3d-actions button:hover {
+  background: rgba(255, 68, 102, 0.3);
+  border-color: rgba(255, 68, 102, 0.5);
+  color: #ff4466;
+}
+
+.agent-3d-actions button.restart:hover {
+  background: rgba(255, 152, 0, 0.3);
+  border-color: rgba(255, 152, 0, 0.5);
+  color: #ff9800;
+}
+
+/* ── Offline agent cards (inside 3D stage) ── */
+
+.agent-3d-offline {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 3;
+}
+
+.agent-3d-offline-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(10, 14, 26, 0.85);
+  border: 1px solid rgba(255, 68, 102, 0.2);
+  backdrop-filter: blur(8px);
+}
+
+.agent-3d-offline-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.agent-3d-offline-name {
+  font-family: 'Orbitron', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  letter-spacing: 1px;
+}
+
+.agent-3d-offline-state,
+.agent-3d-offline-detail {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-3d-offline-state {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.agent-3d-offline-detail {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.agent-3d-offline-detail.error {
+  color: #ff9cb0;
+}
+
+.agent-3d-offline-card button {
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid rgba(34, 211, 238, 0.3);
+  background: rgba(34, 211, 238, 0.1);
+  color: #22d3ee;
+  transition: all 0.2s;
+}
+
+.agent-3d-offline-card button:hover {
+  background: rgba(34, 211, 238, 0.25);
+}
+
+.agent-3d-offline-card button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ── Loading fallback ── */
+
+.agent-3d-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 100%;
+  height: 520px;
+  border-radius: 24px;
+  background: rgba(10, 14, 26, 0.6);
+  border: 1px solid rgba(34, 211, 238, 0.1);
+}
+
+.agent-3d-loading-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.agent-3d-loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 2px solid rgba(168, 85, 247, 0.2);
+  border-top-color: #a855f7;
+  border-radius: 50%;
+  animation: spin3d 0.8s linear infinite;
+}
+
+@keyframes spin3d {
+  to { transform: rotate(360deg); }
+}
+
+.agent-3d-loading-text {
+  font-family: 'Orbitron', monospace;
+  font-size: 11px;
+  color: rgba(168, 85, 247, 0.6);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  animation: loading-blink 1.5s ease-in-out infinite;
+}
+
+@keyframes loading-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ── Responsive ── */
+
+@media (max-width: 768px) {
+  .agent-3d-stage,
+  .agent-3d-loading {
+    height: 280px;
+    min-height: 280px;
+  }
+
+  .agent-3d-stage-chrome {
+    top: 10px;
+    left: 10px;
+    padding: 8px 10px;
+  }
+
+  .agent-3d-name {
+    font-size: 9px;
+    padding: 3px 8px;
+  }
+
+  .agent-3d-label {
+    width: min(180px, 46vw);
+    bottom: 10px;
+  }
+
+  .agent-3d-detail {
+    font-size: 9px;
+    padding: 3px 8px;
+  }
+}

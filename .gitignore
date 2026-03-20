@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+
+# Logs
+logs/
+*.log
+
+# Environment (contains secrets)
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Persona static fallbacks (live-read from containers)
+agent/personas/
+
+# Misc
+nohup.out
