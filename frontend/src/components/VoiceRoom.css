@@ -1898,7 +1898,7 @@ body.vr-is-resizing {
   background: rgba(82, 169, 255, 0.1);
 }
 
-.vr-chat-msg.sender-giannis {
+.vr-chat-msg.sender-human {
   border-left-color: #38d978;
   background: rgba(56, 217, 120, 0.1);
 }
@@ -1938,7 +1938,7 @@ body.vr-is-resizing {
   color: #8dcbff;
 }
 
-.vr-chat-sender.sender-giannis {
+.vr-chat-sender.sender-human {
   color: #7df0a8;
 }
 
@@ -1966,7 +1966,7 @@ body.vr-is-resizing {
   color: #b1ddff;
 }
 
-.vr-agent-badge.sender-giannis {
+.vr-agent-badge.sender-human {
   background: rgba(56, 217, 120, 0.18);
   color: #98f3ba;
 }

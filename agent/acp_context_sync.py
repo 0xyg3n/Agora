@@ -7,7 +7,7 @@ the latest voice-room activity.
 The log file lives at CONTEXT_SYNC_PATH (default /tmp/virtualcomms-context.jsonl)
 and contains one JSON object per line:
 
-    {"ts": 1712345678.123, "room": "skynet-comms", "speaker": "Giannis",
+    {"ts": 1712345678.123, "room": "agora-comms", "speaker": "User",
      "agent": "laira", "type": "voice_input", "content": "hello everyone"}
 
 A maximum of CONTEXT_SYNC_MAX_LINES recent lines are kept (older entries

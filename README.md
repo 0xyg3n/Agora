@@ -135,13 +135,13 @@ sequenceDiagram
     participant Bus as ACP Event Bus
     participant TG as Telegram Session
 
-    VR->>Bus: publish: Giannis said "hello everyone"
+    VR->>Bus: publish: User said "hello everyone"
     Bus-->>Bus: Store in ring buffer
 
     Note over TG: Later, on Telegram...
     TG->>TG: User asks "what happened in the voice room?"
     TG->>Bus: acp_bus_query(topic="room:agora-comms")
-    Bus-->>TG: Recent events: Giannis said "hello everyone"
+    Bus-->>TG: Recent events: User said "hello everyone"
     TG->>TG: Agent responds with voice room context
 ```
 
@@ -175,7 +175,7 @@ The bus is a lightweight WebSocket pub/sub broker (`agent/acp_bus.py`). Events a
 ```json
 {
   "type": "voice_input",
-  "speaker": "Giannis",
+  "speaker": "User",
   "agent": "laira",
   "content": "Hey everyone, can you hear me?",
   "ts": 1712345678.123
@@ -270,16 +270,16 @@ graph TB
     subgraph WG[WireGuard Mesh — 10.0.0.0/24]
         direction TB
 
-        subgraph A[Machine A — VPS / Seaverse<br/>10.0.0.1]
-            Bus[ACP Event Bus<br/>ws://10.0.0.1:9090]
+        subgraph A[Machine A — Primary VPS<br/>10.x.x.1]
+            Bus[ACP Event Bus<br/>ws://10.x.x.1:9090]
             LK[LiveKit Server]
             FE[Agora Frontend :3210]
             L1[skynet-laira<br/>Hermes Agent]
             L2[skynet-loki<br/>OpenClaw Agent]
         end
 
-        subgraph B[Machine B — Giannis PC + GPU<br/>10.0.0.3]
-            GPU1[GPU TTS / STT<br/>VibeVoice, local Whisper]
+        subgraph B[Machine B — GPU Workstation<br/>10.x.x.3]
+            GPU1[GPU TTS / STT<br/>local Whisper]
             A3[Additional Agents]
         end
 
@@ -291,10 +291,10 @@ graph TB
 
     L1 --> Bus
     L2 --> Bus
-    GPU1 -->|ws://10.0.0.1:9090| Bus
-    A3 -->|ws://10.0.0.1:9090| Bus
-    GPU2 -->|ws://10.0.0.1:9090| Bus
-    A4 -->|ws://10.0.0.1:9090| Bus
+    GPU1 -->|ws://10.x.x.1:9090| Bus
+    A3 -->|ws://10.x.x.1:9090| Bus
+    GPU2 -->|ws://10.x.x.1:9090| Bus
+    A4 -->|ws://10.x.x.1:9090| Bus
 
     A <-->|WireGuard<br/>encrypted| B
     A <-->|WireGuard<br/>encrypted| C
@@ -502,4 +502,4 @@ python -m pytest tests/ -v   # 57 passed in 0.8s
 
 ## License
 
-Proprietary. Copyright (c) 2026 Giannis Zacharioudakis. All rights reserved.
+Proprietary. All rights reserved.
