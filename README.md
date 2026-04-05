@@ -184,28 +184,34 @@ The bus is a lightweight WebSocket pub/sub broker (`agent/acp_bus.py`). Events a
 
 ## Supported Agent Platforms
 
+Agora doesn't care **where** your agent runs or **what** powers it. If it has an HTTP endpoint, it works. Self-hosted, cloud, bare metal, Docker, Kubernetes — doesn't matter. The ACP bus connects them all.
+
 ### Hermes Agent (native support)
+
+Open-source agent framework by Nous Research. Self-hostable.
 
 - Direct HTTP streaming via the Hermes API server
 - SSE streaming for progressive TTS — agent speaks while still thinking
 - Native `acp_bus_query` tool registered in the Hermes tool system
 - Agora registered as a first-class platform (`Platform.AGORA`)
-- Session persistence via `X-Hermes-Session-Id` header
-- Full access to Hermes memory, skills, and tools
+- Session persistence, memory, skills, and full tool access
+- Source: [github.com/NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent)
 
 ### OpenClaw (supported via API shim)
 
+Open-source autonomous agent framework with WebSocket gateway, browser automation, and multi-channel delivery.
+
 - OpenAI-compatible HTTP wrapper deployed inside the container (`openclaw_api_shim.py`)
 - SSE streaming — response split into sentences, streamed as chunks
-- Cross-session bus query via workspace skill (`acp-bus-query`)
-- Agora awareness in workspace configuration
+- Cross-session bus query via workspace skill
 - Session persistence via session ID routing
 
-### Any HTTP Agent (bring your own)
+### Any OpenAI-Compatible Agent (bring your own)
 
-Any agent that exposes an OpenAI-compatible `/v1/chat/completions` endpoint works. Add it to `agent/agent_registry.py`:
+Any agent that exposes `/v1/chat/completions` works — LangChain servers, LlamaIndex agents, custom FastAPI wrappers, vLLM endpoints, Ollama, or any OpenAI-compatible API:
 
 ```python
+# agent/agent_registry.py
 AgentConfig(
     name="Nova",
     container="my-nova-container",
@@ -217,16 +223,43 @@ AgentConfig(
 )
 ```
 
-Or configure via environment variables:
-
-```bash
-AGENT_NOVA_URL=http://127.0.0.1:8080
-AGENT_NOVA_VOICE=en-US-JennyNeural
-AGENT_NOVA_GREETING=Hi, Nova here!
-AGENT_NOVA_DELAY=2.0
-```
-
 Then start: `AGENT_NAME=Nova ACP_ENABLED=true python agent.py dev`
+
+### Deployment Models
+
+| Model | Description | Example |
+|-------|-------------|---------|
+| **Single Machine** | Everything on one host | VPS with Docker containers — simplest setup |
+| **Self-Hosted + VPS** | Agents on your PC, bus on VPS | GPU inference local, room hosted remotely |
+| **Multi-VPS** | Distributed across cloud instances | Scale agents across regions |
+| **Hybrid** | Mix of local, VPS, and cloud GPU | Best of all worlds via WireGuard mesh |
+
+The ACP Event Bus is the glue. An agent on your local machine with a 4090 running local Whisper connects to the same bus as a cloud-hosted Hermes instance running Claude. They share context, see the same events, and collaborate in the same voice room — regardless of where they physically run.
+
+```mermaid
+graph LR
+    subgraph Local[Your Machine]
+        A1[Local Agent<br/>GPU inference]
+    end
+    subgraph VPS[Cloud VPS]
+        Bus((ACP Bus))
+        LK[LiveKit + Agora]
+        A2[Hermes Agent]
+    end
+    subgraph Cloud[Cloud GPU]
+        A3[Inference Agent<br/>fine-tuned models]
+    end
+
+    A1 -->|HTTP over WireGuard| Bus
+    A2 --> Bus
+    A3 -->|HTTP over WireGuard| Bus
+    Bus --> LK
+
+    style Bus fill:#e94560,stroke:#fff,color:#fff
+    style Local fill:#161b22,stroke:#533483,color:#c9d1d9
+    style VPS fill:#161b22,stroke:#0f3460,color:#c9d1d9
+    style Cloud fill:#161b22,stroke:#533483,color:#c9d1d9
+```
 
 ## WireGuard Mesh (Multi-Machine)
 
