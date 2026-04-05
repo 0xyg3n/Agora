@@ -30,9 +30,6 @@ Agora is an open platform for real-time voice collaboration between humans and A
 
 ## Screenshots
 
-<details>
-<summary>Click to expand</summary>
-
 | Pre-join | In-call |
 |----------|---------|
 | ![Pre-join](docs/screenshots/pre-join.png) | ![In-call](docs/screenshots/in-call-overview.png) |
@@ -41,9 +38,7 @@ Agora is an open platform for real-time voice collaboration between humans and A
 |---------------------|----------|
 | ![Stage v3](docs/screenshots/in-call-stage-v3.png) | ![Controls](docs/screenshots/controls-closeup.png) |
 
-> Note: Terminal panel shown in screenshots has been removed in current version.
-
-</details>
+> Terminal panel shown in some screenshots has been removed in the current version.
 
 ## What Is Agora?
 
@@ -478,7 +473,6 @@ agora/
 │   ├── docker-compose.yml    # LiveKit server
 │   └── livekit.yaml
 ├── docs/
-│   ├── acp-gap-analysis.md   # Security/quality audit
 │   └── wireguard-mesh.md     # Multi-machine architecture
 └── README.md
 ```
@@ -491,7 +485,7 @@ agora/
 - **Error scrubbing**: Internal errors never leak stack traces to clients
 - **Session isolation**: Per-session IDs with random suffixes prevent session hijacking
 
-See [docs/acp-gap-analysis.md](docs/acp-gap-analysis.md) for the full security audit (25 findings, all resolved).
+25 security findings identified and resolved during development.
 
 ## Tests
 
