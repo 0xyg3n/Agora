@@ -218,6 +218,35 @@ async def entrypoint(ctx: JobContext):
         """Strip control characters and limit participant name length."""
         return re.sub(r'[\x00-\x1f\x7f]', '', name or "unknown")[:64]
 
+    # Regex patterns for TTS sanitization
+    _CODE_BLOCK_RE = re.compile(r'```[\s\S]*?```', re.MULTILINE)
+    _INLINE_CODE_RE = re.compile(r'`[^`]+`')
+    _URL_RE = re.compile(r'https?://\S+')
+    _TERMINAL_LINE_RE = re.compile(r'^[\s]*[$#>].*$', re.MULTILINE)
+    _CURL_CMD_RE = re.compile(r'curl\s+-?\S.*', re.IGNORECASE)
+    _JSON_BLOCK_RE = re.compile(r'\{[^}]*"[^"]*"[^}]*\}')
+    _MARKDOWN_HEADER_RE = re.compile(r'^#{1,6}\s+', re.MULTILINE)
+    _MARKDOWN_BOLD_RE = re.compile(r'\*\*([^*]+)\*\*')
+    _MARKDOWN_LIST_RE = re.compile(r'^\s*[-*]\s+', re.MULTILINE)
+
+    def _sanitize_for_tts(text: str) -> str:
+        """Strip code, URLs, commands, and markdown from text before TTS."""
+        if not text:
+            return text
+        t = _CODE_BLOCK_RE.sub('', text)
+        t = _INLINE_CODE_RE.sub('', t)
+        t = _URL_RE.sub('', t)
+        t = _TERMINAL_LINE_RE.sub('', t)
+        t = _CURL_CMD_RE.sub('', t)
+        t = _JSON_BLOCK_RE.sub('', t)
+        t = _MARKDOWN_HEADER_RE.sub('', t)
+        t = _MARKDOWN_BOLD_RE.sub(r'\1', t)
+        t = _MARKDOWN_LIST_RE.sub('', t)
+        # Collapse whitespace
+        t = re.sub(r'\n{2,}', '. ', t)
+        t = re.sub(r'\s+', ' ', t).strip()
+        return t
+
     def _normalize_context_text(text: str) -> str:
         """Normalize and cap a context line before storing or injecting it."""
         return normalize_context_text(text, _MAX_CONTEXT_ENTRY_CHARS)
@@ -482,7 +511,7 @@ async def entrypoint(ctx: JobContext):
 
         def _enqueue_sentence(text: str) -> None:
             """Queue a completed sentence for TTS (non-blocking)."""
-            cleaned = text.strip()
+            cleaned = _sanitize_for_tts(text.strip())
             if not cleaned:
                 return
             _spoken_sentences.append(cleaned)
@@ -790,10 +819,19 @@ async def entrypoint(ctx: JobContext):
             f"This is a REAL-TIME VOICE conversation — not Telegram, not Discord, "
             f"not WhatsApp. You are speaking through Agora TTS right now. "
             f"Participants in this room: {participant_str}.\n"
+            f"VOICE OUTPUT RULES — CRITICAL:\n"
+            f"- Your text is spoken aloud via TTS. NEVER output code blocks, "
+            f"terminal commands, URLs, API calls, curl commands, or technical output.\n"
+            f"- When you use tools (send_message, exec, browser, etc.), work SILENTLY "
+            f"and only speak the human-friendly result. Example: say 'Done, I sent the "
+            f"message on Telegram' — NOT the curl command or API response.\n"
+            f"- Never say 'curl', 'grep', 'cat', 'echo', 'python', or show command output.\n"
+            f"- No markdown, no code fences, no bullet points. Speak naturally.\n"
+            f"- Keep every response to 1-2 sentences, max 25 words.\n"
             f"CROSS-SESSION TOOL: You have the acp_bus_query tool available. "
             f"When asked about what happened in other sessions (Telegram, Discord), "
             f"or what other agents/users said elsewhere, you MUST call "
-            f"acp_bus_query(topic='room:skynet-comms') to check. "
+            f"acp_bus_query(topic='room:agora-comms') to check. "
             f"Do NOT say you can't access other sessions — USE the tool to check. "
             f"The ACP Event Bus connects all your sessions across platforms."
         )
@@ -858,7 +896,9 @@ async def entrypoint(ctx: JobContext):
                 status="Speaking response",
                 touch=True,
             )
-            await session.say(text)
+            clean = _sanitize_for_tts(text)
+            if clean:
+                await session.say(clean)
         await _send_chat_echo(text)
         await _set_agent_meta(
             state="idle",

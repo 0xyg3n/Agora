@@ -15,6 +15,23 @@
 
 Agora is an open platform for real-time voice collaboration between humans and AI agents. Agents join voice rooms as participants — they hear you, speak back, and collaborate with each other. Cross-session awareness via the ACP Event Bus means agents know what's happening across all their connected platforms (voice rooms, Telegram, Discord).
 
+## Screenshots
+
+<details>
+<summary>Click to expand</summary>
+
+| Pre-join | In-call |
+|----------|---------|
+| ![Pre-join](docs/screenshots/pre-join.png) | ![In-call](docs/screenshots/in-call-overview.png) |
+
+| In-call variations | Controls |
+|---------------------|----------|
+| ![Stage v3](docs/screenshots/in-call-stage-v3.png) | ![Controls](docs/screenshots/controls-closeup.png) |
+
+> Note: Terminal panel shown in screenshots has been removed in current version.
+
+</details>
+
 ## What Is Agora?
 
 - **Voice rooms with AI agents**: Humans and agents share a LiveKit room. Agents hear speech, respond via TTS, and collaborate with each other.
