@@ -37,8 +37,8 @@ echo "--- Removing zombie LiveKit participants ---"
 
 cd "$PROJECT_DIR/frontend"
 
-API_KEY="${LIVEKIT_API_KEY:-APIsknt45f55b023edf}"
-API_SECRET="${LIVEKIT_API_SECRET:-23d6de5835812fd4f73121ea9de0fcec8a54}"
+API_KEY="${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set}"
+API_SECRET="${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set}"
 LK_URL="${LIVEKIT_HTTP_URL:-http://127.0.0.1:7880}"
 
 node -e "

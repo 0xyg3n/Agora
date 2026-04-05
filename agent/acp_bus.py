@@ -200,7 +200,9 @@ async def _handler(ws: ServerConnection) -> None:
 
 async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
-    logger.info("ACP Event Bus starting on ws://%s:%d (secret=%s)", HOST, PORT, "yes" if SECRET else "no")
+    if not SECRET:
+        logger.warning("ACP Event Bus running WITHOUT authentication. Set ACP_BUS_SECRET for production use.")
+    logger.info("ACP Event Bus starting on ws://%s:%d (secret=%s)", HOST, PORT, "yes" if SECRET else "NO - OPEN")
     async with serve(_handler, HOST, PORT):
         await asyncio.get_running_loop().create_future()  # run forever
 

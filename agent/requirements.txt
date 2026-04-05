@@ -1,0 +1,14 @@
+# Agora voice agent dependencies
+aiohttp>=3.9
+anthropic>=0.40
+edge-tts>=7.0
+faster-whisper>=1.0
+livekit>=1.0
+livekit-agents>=1.5
+livekit-plugins-silero>=1.5
+numpy>=2.0
+onnxruntime>=1.18
+openai>=1.50
+pytest>=8.0
+python-dotenv>=1.0
+websockets>=13.0

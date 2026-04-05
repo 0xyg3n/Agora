@@ -8,8 +8,8 @@ COMPAT_CHECK_SCRIPT="$PROJECT_DIR/scripts/check-openclaw-compat.sh"
 
 # Shared config
 export LIVEKIT_URL="${LIVEKIT_URL:-ws://localhost:7880}"
-export LIVEKIT_API_KEY="${LIVEKIT_API_KEY:-APIsknt45f55b023edf}"
-export LIVEKIT_API_SECRET="${LIVEKIT_API_SECRET:-23d6de5835812fd4f73121ea9de0fcec8a54}"
+export LIVEKIT_API_KEY="${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set in .env or environment}"
+export LIVEKIT_API_SECRET="${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set in .env or environment}"
 export OLLAMA_MODEL="${OLLAMA_MODEL:-llama3.2:3b}"
 export WHISPER_MODEL="${WHISPER_MODEL:-small}"
 

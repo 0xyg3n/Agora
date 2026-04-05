@@ -62,8 +62,8 @@ async def run_openclaw_agent(message: str, session_id: str, timeout: int = 60) -
         return {"error": "Invalid JSON from openclaw agent", "raw": stdout.decode()[:500]}
 
 
-# Sentence boundary: .!? followed by whitespace (works with lowercase LLM output).
-_SENTENCE_SPLIT = re.compile(r'(?<=[.!?])\s+')
+# Sentence boundary: .!? followed by whitespace and a letter (avoids splitting abbreviations).
+_SENTENCE_SPLIT = re.compile(r'(?<=[.!?])\s+(?=[A-Za-z])')
 
 
 async def run_openclaw_agent_streaming(
@@ -313,7 +313,9 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
 
 async def main():
     server = await asyncio.start_server(handle_client, SHIM_HOST, SHIM_PORT)
-    print(f"[openclaw-api-shim] Listening on {SHIM_HOST}:{SHIM_PORT} (streaming=true)", flush=True)
+    if not SHIM_API_KEY:
+        print("[openclaw-api-shim] WARNING: Running WITHOUT API key. Set SHIM_API_KEY for production.", file=sys.stderr, flush=True)
+    print(f"[openclaw-api-shim] Listening on {SHIM_HOST}:{SHIM_PORT} (streaming=true, auth={'yes' if SHIM_API_KEY else 'NO'})", flush=True)
     async with server:
         await server.serve_forever()
 

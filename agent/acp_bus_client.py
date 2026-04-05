@@ -48,6 +48,7 @@ class AcpBusClient:
         self._subscriptions: list[str] = []
         self._recv_task: asyncio.Task | None = None
         self._running = False
+        self._degraded = False
         self._pending_responses: dict[str, asyncio.Future] = {}
 
     async def connect(self) -> bool:
@@ -90,6 +91,8 @@ class AcpBusClient:
     async def publish(self, topic: str, event: dict) -> None:
         """Publish an event to a topic (fire-and-forget)."""
         if not self._ws:
+            if self._degraded:
+                logger.warning("ACP bus is offline. Event dropped for topic: %s", topic)
             return
         event.setdefault("ts", time.time())
         try:
@@ -204,5 +207,6 @@ class AcpBusClient:
             except Exception:
                 self._ws = None
                 continue
-        logger.error("Failed to reconnect to ACP bus after 10 attempts")
+        logger.error("Failed to reconnect to ACP bus after 10 attempts. Cross-session context is OFFLINE.")
         self._running = False
+        self._degraded = True

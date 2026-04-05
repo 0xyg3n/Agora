@@ -212,7 +212,8 @@ async def entrypoint(ctx: JobContext):
     )
 
     # Persistent cache for reconnect survival
-    _CONTEXT_CACHE_PATH = f"/tmp/agora-cache/{room_name}-{agent_name.lower()}-context.jsonl"
+    _cache_dir = os.path.expanduser(os.getenv("AGORA_CACHE_DIR", "~/.agora/cache"))
+    _CONTEXT_CACHE_PATH = f"{_cache_dir}/{room_name}-{agent_name.lower()}-context.jsonl"
 
     def _sanitize_name(name: str) -> str:
         """Strip control characters and limit participant name length."""
@@ -345,7 +346,7 @@ async def entrypoint(ctx: JobContext):
     }
 
     # OpenClaw session ID for persistent conversation
-    _session_id = f"livekit-{room_name}-{os.urandom(4).hex()}"
+    _session_id = f"agora-{room_name}-{os.urandom(8).hex()}"
 
     # Voice preamble injected on first OpenClaw call
     _VOICE_PREAMBLE = (
@@ -505,7 +506,7 @@ async def entrypoint(ctx: JobContext):
                     )
                     await session.say(text)
                 except Exception:
-                    logger.debug(f"[{agent_name}] TTS worker error", exc_info=True)
+                    logger.warning(f"[{agent_name}] TTS worker error", exc_info=True)
 
         _tts_task = asyncio.create_task(_tts_worker())
 
@@ -934,7 +935,7 @@ async def entrypoint(ctx: JobContext):
             )
             logger.debug(f"[{agent_name}] Sent chat: {text[:80]}...")
         except Exception:
-            logger.debug(f"[{agent_name}] Failed to send chat reply", exc_info=True)
+            logger.warning(f"[{agent_name}] Failed to send chat reply", exc_info=True)
 
         # Store our own response in context log so the other agent sees both sides
         _store_context_message(agent_name, text)
@@ -1033,7 +1034,7 @@ async def entrypoint(ctx: JobContext):
             return
 
         # Generic message (no names): staggered delay, only one responds
-        delay = {"laira": 0.5, "loki": 3.5}.get(agent_name.lower(), 1.0)
+        delay = _get_delay(agent_name)
         await asyncio.sleep(delay)
         if _is_other_agent_busy():
             logger.debug(f"[{agent_name}] Skipping — other agent already responding")

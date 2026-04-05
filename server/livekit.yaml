@@ -7,8 +7,10 @@ rtc:
   tcp_port: 7881
   use_external_ip: false
 
-keys:
-  APIsknt45f55b023edf: 23d6de5835812fd4f73121ea9de0fcec8a54
+# Keys are loaded from LIVEKIT_KEYS environment variable at runtime.
+# Format: LIVEKIT_KEYS="api_key: api_secret"
+# Example: LIVEKIT_KEYS="mykey123: mysecret456"
+keys: {}
 
 logging:
   level: info
