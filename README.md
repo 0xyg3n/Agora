@@ -4,43 +4,53 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.12+-blue?logo=python&logoColor=white" alt="Python 3.12+">
-  <img src="https://img.shields.io/badge/node-20+-green?logo=node.js&logoColor=white" alt="Node.js 20+">
+  <img src="https://img.shields.io/badge/python-3.10+-blue?logo=python&logoColor=white" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/node-18+-green?logo=node.js&logoColor=white" alt="Node.js 18+">
   <img src="https://img.shields.io/badge/LiveKit-1.5+-purple?logo=webrtc&logoColor=white" alt="LiveKit">
-  <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License">
+  <img src="https://img.shields.io/badge/license-MIT-brightgreen" alt="MIT License">
   <img src="https://img.shields.io/badge/tests-57%20passing-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/voice%20APIs-zero%20cost-ff6b6b" alt="Zero Voice API Costs">
 </p>
 
 ---
 
 Agora is an open platform for real-time voice collaboration between humans and AI agents. Agents join voice rooms as full participants. They hear you, speak back, and work together. The ACP Event Bus gives every agent awareness of what happens across all connected platforms, from voice rooms to Telegram to Discord.
 
+### Why Agora
+
+| | Feature | Details |
+|---|---------|---------|
+| **0 API costs for voice** | All speech processing runs locally. No cloud Whisper, no ElevenLabs, no Google Speech. Free forever. |
+| **Any agent platform** | Hermes, OpenClaw, LangChain, Ollama, vLLM, or any OpenAI-compatible endpoint. Plug in and go. |
+| **Cross-session awareness** | Agents know what happens on Telegram, Discord, and voice rooms through the ACP Event Bus. |
+| **Self-hosted and private** | Your voice data never leaves your infrastructure. Run everything on your own hardware. |
+| **Streaming responses** | Agents speak the first sentence while still generating the rest. No awkward silence. |
+| **Multi-machine ready** | Scale across machines with WireGuard mesh. Same protocol, zero changes. |
+
 ---
 
 ## Table of Contents
 
-- [Screenshots](#screenshots)
-- [Built and Tested With](#built-and-tested-with)
-- [What Is Agora](#what-is-agora)
-- [Architecture](#architecture)
+- [Screenshots](#-screenshots)
+- [Built and Tested With](#-built-and-tested-with)
+- [What Is Agora](#-what-is-agora)
+- [Architecture](#-architecture)
   - [System Overview](#system-overview)
-  - [Voice Pipeline](#voice-pipeline)
-  - [Cross-Session Awareness](#cross-session-awareness)
-  - [ACP Event Bus](#acp-event-bus)
-- [Supported Agent Platforms](#supported-agent-platforms)
+  - [Voice Pipeline](#-voice-pipeline)
+  - [Cross-Session Awareness](#-cross-session-awareness)
+  - [ACP Event Bus](#-acp-event-bus)
+- [Supported Agent Platforms](#-supported-agent-platforms)
   - [Hermes Agent](#hermes-agent-native-support)
   - [OpenClaw](#openclaw-supported-via-api-shim)
   - [Bring Your Own Agent](#any-openai-compatible-agent)
-- [Deployment Models](#deployment-models)
-- [Scaling with WireGuard](#scaling-with-wireguard)
-- [Getting Started](#getting-started)
-  - [Prerequisites](#prerequisites)
-  - [Installation](#installation)
-- [Configuration Reference](#configuration-reference)
-- [Project Structure](#project-structure)
-- [Security](#security)
-- [Running Tests](#running-tests)
-- [License](#license)
+- [Deployment Models](#-deployment-models)
+- [Scaling with WireGuard](#-scaling-with-wireguard)
+- [Getting Started](#-getting-started)
+- [Configuration Reference](#-configuration-reference)
+- [Project Structure](#-project-structure)
+- [Security](#-security)
+- [Running Tests](#-running-tests)
+- [License](#-license)
 
 ---
 
@@ -62,12 +72,12 @@ Agora is an open platform for real-time voice collaboration between humans and A
 |-----------|-----------|---------|
 | **Hermes Agent** | Anthropic Claude Opus 4.6 | Frontier reasoning, SSE streaming, native tool system |
 | **OpenClaw Agent** | OpenAI GPT-5.4 Codex | Full autonomy, browser access, multi-model routing |
-| **Voice Pipeline** | Silero VAD + faster-whisper + edge-tts | Fully local, no cloud voice APIs required |
+| **Voice Pipeline** | Silero VAD + faster-whisper + edge-tts | Fully local, zero API keys, zero cost |
 | **Media Server** | LiveKit 1.8 | WebRTC based real-time audio and video |
 | **Event Bus** | Custom WebSocket pub/sub | In-memory ring buffer, sub-millisecond latency |
 | **Cross-Session** | Native gateway tools | `acp_bus_query` registered in Hermes and OpenClaw |
 
-> **Model agnostic by design.** Agora works with any agent that exposes an OpenAI-compatible HTTP API. It has been tested and validated against frontier models for production-grade performance.
+> **Model agnostic by design.** Agora works with any agent that exposes an OpenAI-compatible HTTP API. Tested and validated against frontier models for production-grade performance.
 
 ---
 
@@ -77,7 +87,7 @@ Agora brings humans and AI agents into the same voice room. Everyone hears each 
 
 - **Live voice rooms** where AI agents are first-class participants, not bots watching from the side
 - **Works with any LLM backend** including Hermes Agent, OpenClaw, LangChain, Ollama, vLLM, or any OpenAI-compatible endpoint
-- **Fully local voice processing** using Silero VAD, faster-whisper STT, and edge-tts with zero cloud API dependencies
+- **Fully local voice processing** using Silero VAD, faster-whisper STT, and edge-tts with zero cloud dependencies and zero API costs
 - **Cross-session awareness** through the ACP Event Bus, which connects voice rooms, Telegram, and Discord into one shared context
 - **Progressive TTS** where the agent speaks the first sentence while still generating the rest, eliminating dead air
 
@@ -159,6 +169,8 @@ graph LR
     style TTS fill:#16213e,stroke:#e94560,color:#fff
 ```
 
+Every component in this pipeline is free and runs locally. No API keys, no per-minute billing, no cloud dependencies.
+
 ### Cross-Session Awareness
 
 When someone speaks in a voice room, the event is published to the ACP Event Bus. Any agent on any platform can then query the bus to learn what happened.
@@ -217,7 +229,7 @@ graph TB
 ```
 
 **Key properties:**
-- In-memory ring buffer of 100 events per topic (no disk, no database)
+- In-memory ring buffer of 100 events per topic, no disk, no database
 - Topics follow the pattern `room:<name>` or `agent:<name>`
 - Agents query on demand via the native `acp_bus_query` tool
 - Sub-millisecond publish latency within the same host
@@ -396,13 +408,13 @@ LIVEKIT_URL=ws://127.0.0.1:7880
 LIVEKIT_API_KEY=your-api-key
 LIVEKIT_API_SECRET=your-api-secret
 
-# Agent 1 configuration
+# Agent 1
 AGENT_MYAGENT1_URL=http://127.0.0.1:3133
 EDGE_TTS_VOICE_MYAGENT1=en-US-AriaNeural
 AGENT_MYAGENT1_GREETING=Hello, I am here!
 AGENT_MYAGENT1_DELAY=0.5
 
-# Agent 2 configuration
+# Agent 2
 AGENT_MYAGENT2_URL=http://127.0.0.1:8642
 EDGE_TTS_VOICE_MYAGENT2=en-US-GuyNeural
 AGENT_MYAGENT2_GREETING=Hey there.
@@ -483,7 +495,7 @@ ssh -L 3210:127.0.0.1:3210 -L 7880:127.0.0.1:7880 yourserver
 | `ACP_ENABLED` | `true` | Enable the ACP bridge |
 | `ACP_LAIRA_URL` | `http://127.0.0.1:3133` | Hermes gateway URL |
 | `ACP_LOKI_URL` | `http://172.20.0.3:8642` | OpenClaw shim URL |
-| `ACP_STREAMING_AGENTS` | `laira,loki` | Comma-separated list of agents with SSE streaming |
+| `ACP_STREAMING_AGENTS` | `laira,loki` | Comma-separated agents with SSE streaming |
 | `ACP_BUS_HOST` | `0.0.0.0` | Event Bus bind address |
 | `ACP_BUS_PORT` | `9090` | Event Bus port |
 | `ACP_BUS_SECRET` | _(empty)_ | Bus authentication secret (optional) |
@@ -529,10 +541,11 @@ agora/
 ## Security
 
 - **Authentication**: API key validation on agent shims and optional bus authentication secret
-- **Input sanitization**: Room names, session IDs, and participant names are validated against path traversal and header injection attacks
+- **Input sanitization**: Room names, session IDs, and participant names validated against path traversal and header injection
 - **Request limits**: 1 MB body size limit on all API shim endpoints
 - **Error handling**: Internal errors and stack traces are never exposed to clients
 - **Session isolation**: Per-session identifiers include random suffixes to prevent hijacking
+- **TTS sanitization**: Code blocks, URLs, and terminal output are stripped before voice synthesis
 
 25 security findings were identified and resolved during development.
 
@@ -550,7 +563,7 @@ python -m pytest tests/ -v
 57 passed in 0.8s
 ```
 
-Test coverage includes the ACP protocol, event bus, agent registry, sentence splitting, bridge communication, and runtime utilities.
+Coverage includes the ACP protocol, event bus, agent registry, sentence splitting, bridge communication, and runtime utilities.
 
 ---
 
