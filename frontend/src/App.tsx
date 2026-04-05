@@ -81,8 +81,8 @@ function App() {
               </defs>
             </svg>
           </div>
-          <h1 className="call-title">Skynet Comms</h1>
-          <p className="call-subtitle">AI Voice Collaboration Room</p>
+          <h1 className="call-title">Agora</h1>
+          <p className="call-subtitle">Skynet Comms — AI Voice Collaboration</p>
 
           {/* Agent avatars preview */}
           <div className="call-agents-preview">

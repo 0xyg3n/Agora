@@ -1,11 +1,12 @@
-"""Voice agent for Skynet Comms — thin voice I/O layer over OpenClaw.
+"""Agora voice agent — real-time voice I/O layer for Skynet Comms.
 
 Architecture:
-  Human speaks (mic) → VAD → STT → user_input_transcribed → OpenClaw → session.say() → TTS
-  Human types (chat) → text_input_cb → OpenClaw → session.say() → TTS
+  Human speaks (mic) → VAD → STT → user_input_transcribed → ACP bridge → session.say() → TTS
+  Human types (chat) → text_input_cb → ACP bridge → session.say() → TTS
   Agent-to-agent: text chat on lk.agent.chat (context sharing + mention-triggered replies)
+  Cross-session: ACP Event Bus for shared context across Agora/Telegram/Discord
 
-No LiveKit LLM pipeline is used. All intelligence comes from OpenClaw sessions.
+Intelligence comes from Hermes (Laira) and OpenClaw (Loki) gateways via the ACP bridge.
 Voice transcriptions are echoed to lk.chat so they appear in the UI with the human's name.
 """
 
@@ -31,8 +32,20 @@ from livekit.plugins import silero
 
 from edge_tts_plugin import EdgeTTS
 from whisper_stt_plugin import WhisperSTT
-from openclaw_bridge import send_to_openclaw
 from openclaw_llm_plugin import NoOpLLM
+
+# ACP bridge (streaming HTTP to Hermes gateway) vs legacy docker-exec bridge.
+# ACP requires the Hermes API server running inside the container.
+# Agents on OpenClaw (e.g. Loki) must use ACP_ENABLED=false to keep docker exec.
+_ACP_ENABLED = os.environ.get("ACP_ENABLED", "true").lower() in ("true", "1", "yes")
+
+# Always import legacy bridge (it's stdlib-only, zero cost) so both paths work
+from openclaw_bridge import send_to_openclaw
+
+if _ACP_ENABLED:
+    from acp_bridge import stream_from_gateway, send_to_gateway, close_session as _acp_close
+    from acp_protocol import ACPMessage, ACPResponseChunk, ChunkType, MessageType
+from acp_bus_client import AcpBusClient
 from runtime_utils import (
     build_room_context,
     classify_agent_turn_trigger,
@@ -109,12 +122,56 @@ _GREETINGS = {
 server = AgentServer()
 
 
+# Per-agent voice defaults (used when no agent-specific env var is set)
+_DEFAULT_VOICES: dict[str, str] = {
+    "laira": "de-DE-SeraphinaMultilingualNeural",
+    "loki": "en-US-GuyNeural",
+}
+
+
+def _resolve_voice(name: str) -> str:
+    """Resolve TTS voice: EDGE_TTS_VOICE_{NAME} > EDGE_TTS_VOICE > per-agent default."""
+    agent_key = f"EDGE_TTS_VOICE_{name.upper()}"
+    specific = os.environ.get(agent_key, "").strip()
+    if specific:
+        return specific
+    generic = os.environ.get("EDGE_TTS_VOICE", "").strip()
+    if generic:
+        return generic
+    return _DEFAULT_VOICES.get(name.lower(), "en-US-AriaNeural")
+
+
 @server.rtc_session(agent_name=agent_name)
 async def entrypoint(ctx: JobContext):
-    voice = os.environ.get("EDGE_TTS_VOICE", "en-US-AriaNeural")
-    room_name = ctx.room.name
+    voice = _resolve_voice(agent_name)
+    room_name = re.sub(r'[^a-zA-Z0-9_-]', '', ctx.room.name)[:64]
 
-    logger.info(f"Starting agent '{agent_name}' in room '{room_name}'")
+    logger.info(f"Starting agent '{agent_name}' in room '{room_name}' (voice={voice})")
+
+    # ACP Event Bus — shared cross-session context
+    _bus = AcpBusClient()
+    _bus_topic = f"room:{room_name}"
+
+    async def _bus_event_handler(topic: str, event: dict) -> None:
+        """Handle incoming bus events from other sessions/agents."""
+        # Store events from other agents/sessions into our local context
+        speaker = event.get("speaker", "")
+        content = event.get("content", "")
+        evt_agent = event.get("agent", "")
+        if content and evt_agent != agent_name.lower():
+            _store_context_message(speaker, content, persist=False)
+
+    _bus.on_event = _bus_event_handler
+
+    async def _connect_bus() -> None:
+        ok = await _bus.connect_with_retry(max_attempts=3)
+        if ok:
+            await _bus.subscribe([_bus_topic, f"agent:{agent_name.lower()}"])
+            logger.info(f"[{agent_name}] Connected to ACP Event Bus, subscribed to {_bus_topic}")
+        else:
+            logger.warning(f"[{agent_name}] ACP Event Bus unavailable — running without cross-session context")
+
+    asyncio.create_task(_connect_bus())
 
     session = AgentSession(
         vad=_get_vad(),
@@ -134,7 +191,7 @@ async def entrypoint(ctx: JobContext):
     _MAX_CONTEXT_ENTRY_CHARS = 180
     _OPENCLAW_FALLBACK = "Sorry, I'm having trouble right now."
     _OPENCLAW_TIMEOUT_FALLBACK = "Sorry, that timed out. Please try again."
-    _EMPTY_REPLY_FALLBACK = "Sorry, I lost the reply. Please try again."
+    _EMPTY_REPLY_FALLBACK = "Hmm, give me a second, that one took too long. Try again?"
     _VISION_FALLBACK = "Sorry, I had trouble checking that."
     _LOW_VALUE_CONTEXT_LINES = {
         greeting.lower() for greeting in _GREETINGS.values()
@@ -152,6 +209,10 @@ async def entrypoint(ctx: JobContext):
 
     # Persistent cache for reconnect survival
     _CONTEXT_CACHE_PATH = f"/srv/project/livekit-collab/agent/.cache/{room_name}-{agent_name.lower()}-context.jsonl"
+
+    def _sanitize_name(name: str) -> str:
+        """Strip control characters and limit participant name length."""
+        return re.sub(r'[\x00-\x1f\x7f]', '', name or "unknown")[:64]
 
     def _normalize_context_text(text: str) -> str:
         """Normalize and cap a context line before storing or injecting it."""
@@ -196,6 +257,19 @@ async def entrypoint(ctx: JobContext):
         except Exception:
             pass
 
+        # Publish to ACP Event Bus (non-blocking, best-effort)
+        is_agent = sender.lower() in _AGENT_NAMES
+        if _bus.connected:
+            asyncio.create_task(_bus.publish(
+                f"room:{room_name}",
+                {
+                    "type": "agent_response" if is_agent else "voice_input",
+                    "agent": agent_name.lower(),
+                    "speaker": sender,
+                    "content": normalized,
+                },
+            ))
+
     try:
         os.makedirs(os.path.dirname(_CONTEXT_CACHE_PATH), exist_ok=True)
         with open(_CONTEXT_CACHE_PATH, "r") as f:
@@ -238,7 +312,7 @@ async def entrypoint(ctx: JobContext):
     }
 
     # OpenClaw session ID for persistent conversation
-    _session_id = f"livekit-{room_name}"
+    _session_id = f"livekit-{room_name}-{os.urandom(4).hex()}"
 
     # Voice preamble injected on first OpenClaw call
     _VOICE_PREAMBLE = (
@@ -312,39 +386,209 @@ async def entrypoint(ctx: JobContext):
             max_entry_chars=_MAX_CONTEXT_ENTRY_CHARS,
         )
 
-    async def _ask_openclaw(human_text: str, sender: str) -> str:
-        """Single OpenClaw call with room context and brevity enforcement."""
+    async def _build_prompt(human_text: str, sender: str) -> tuple[str, bool]:
+        """Build the full prompt with context, bus events, and voice preamble."""
         context = _build_room_context()
-        message = f"{context}[{sender}]: {human_text}\n\n[Voice reply: 1-2 sentences, <=25 words, plain text.]"
-        preamble_added = False
 
-        # Prepend voice preamble on first call
+        # Inject recent cross-session events from the ACP bus
+        bus_context = ""
+        if _bus.connected:
+            try:
+                recent = await _bus.get_recent(_bus_topic, n=10)
+                if recent:
+                    lines = []
+                    for evt in recent[-6:]:
+                        spk = evt.get("speaker", "?")
+                        ct = evt.get("content", "")[:120]
+                        et = evt.get("type", "")
+                        if ct:
+                            label = "said" if et == "voice_input" else "responded"
+                            lines.append(f"  {spk} {label}: {ct}")
+                    if lines:
+                        bus_context = "[Recent room activity via ACP bus]\n" + "\n".join(lines) + "\n\n"
+            except Exception:
+                pass
+
+        message = f"{bus_context}{context}[{sender}]: {human_text}\n\n[Voice reply: 1-2 sentences, <=25 words, plain text.]"
+        preamble_added = False
         if not _preamble_sent[0]:
             _preamble_sent[0] = True
             message = f"{_VOICE_PREAMBLE}\n\n{message}"
             preamble_added = True
+        return message, preamble_added
 
-        prompt_chars = len(message)
-        context_chars = len(context)
-        context_messages = min(len(_agent_context_log), _MAX_CONTEXT_MESSAGES)
+    async def _ask_acp_streaming(human_text: str, sender: str) -> str:
+        """ACP streaming call — speaks sentences progressively via TTS as they arrive."""
+        message, preamble_added = await _build_prompt(human_text, sender)
 
         await _set_agent_meta(
-            activity="calling_openclaw",
-            status=f"Calling OpenClaw about: {human_text}",
+            activity="calling_acp",
+            status="Processing voice input",
             error="",
             touch=True,
         )
         logger.info(
-            f"[{agent_name}] → OpenClaw: sender={sender} prompt_chars={prompt_chars} "
-            f"context_chars={context_chars} context_msgs={context_messages} "
+            f"[{agent_name}] → ACP: sender={sender} prompt_chars={len(message)} "
+            f"preamble={'yes' if preamble_added else 'no'}"
+        )
+        started = time.monotonic()
+
+        acp_msg = ACPMessage(
+            type=MessageType.VOICE_INPUT,
+            session_id=_session_id,
+            sender=sender,
+            content=message,
+            metadata={
+                "room": room_name,
+                "modality": "voice",
+                "agent_name": agent_name,
+            },
+        )
+
+        # Accumulate text and speak sentences as they complete.
+        _sentence_buf: list[str] = []     # chars of current partial sentence
+        _spoken_sentences: list[str] = [] # already spoken
+        _full_parts: list[str] = []       # all text for final return
+
+        # Sentence boundary: .!? followed by whitespace AND an uppercase letter.
+        # This avoids splitting on abbreviations (Dr. Smith, U.S. history, e.g. foo).
+        _SENTENCE_SPLIT = re.compile(r'(?<=[.!?])\s+(?=[A-Z])')
+
+        # TTS queue: sentences are spoken in a background task so streaming
+        # can continue accumulating text while TTS renders the current sentence.
+        _tts_queue: asyncio.Queue[str | None] = asyncio.Queue()
+
+        async def _tts_worker() -> None:
+            """Background worker: consume sentences from queue and speak them."""
+            while True:
+                text = await _tts_queue.get()
+                if text is None:
+                    break
+                try:
+                    await _set_agent_meta(
+                        activity="speaking",
+                        status="Speaking (streaming)",
+                        touch=True,
+                    )
+                    await session.say(text)
+                except Exception:
+                    logger.debug(f"[{agent_name}] TTS worker error", exc_info=True)
+
+        _tts_task = asyncio.create_task(_tts_worker())
+
+        def _enqueue_sentence(text: str) -> None:
+            """Queue a completed sentence for TTS (non-blocking)."""
+            cleaned = text.strip()
+            if not cleaned:
+                return
+            _spoken_sentences.append(cleaned)
+            _tts_queue.put_nowait(cleaned)
+
+        try:
+            async for chunk in stream_from_gateway(
+                agent_name, acp_msg,
+                system_prompt=_build_system_prompt(),
+                timeout=60,
+            ):
+                if chunk.type == ChunkType.TEXT_CHUNK:
+                    _full_parts.append(chunk.content)
+                    _sentence_buf.append(chunk.content)
+                    # Check if we have complete sentences to speak
+                    buf_text = "".join(_sentence_buf)
+                    parts = _SENTENCE_SPLIT.split(buf_text)
+                    if len(parts) > 1:
+                        for sentence in parts[:-1]:
+                            _enqueue_sentence(sentence)
+                        _sentence_buf.clear()
+                        if parts[-1].strip():
+                            _sentence_buf.append(parts[-1])
+
+                elif chunk.type == ChunkType.ERROR:
+                    await _set_agent_meta(
+                        activity="error",
+                        status="ACP request failed",
+                        error=chunk.content,
+                        touch=True,
+                    )
+                    duration_ms = int((time.monotonic() - started) * 1000)
+                    logger.error(
+                        f"[{agent_name}] ACP failed after {duration_ms}ms: {chunk.content}"
+                    )
+                    _tts_queue.put_nowait(None)  # stop TTS worker
+                    await _tts_task
+                    if _spoken_sentences:
+                        return "".join(s + " " for s in _spoken_sentences).strip()
+                    return _OPENCLAW_FALLBACK
+
+                elif chunk.type == ChunkType.DONE:
+                    pass
+
+            # Flush remaining buffered text, then drain TTS queue
+            remaining = "".join(_sentence_buf).strip()
+            if remaining:
+                _enqueue_sentence(remaining)
+            _tts_queue.put_nowait(None)  # signal worker to stop
+            await _tts_task
+
+        except Exception:
+            _tts_queue.put_nowait(None)
+            await _tts_task
+            await _set_agent_meta(
+                activity="error",
+                status="Bridge request failed",
+                error="ACP bridge failure",
+                touch=True,
+            )
+            logger.exception(f"[{agent_name}] ACP bridge raised unexpectedly")
+            if _spoken_sentences:
+                return "".join(s + " " for s in _spoken_sentences).strip()
+            return _OPENCLAW_FALLBACK
+
+        full_text = "".join(_full_parts).strip()
+        duration_ms = int((time.monotonic() - started) * 1000)
+
+        if not full_text:
+            await _set_agent_meta(
+                activity="error",
+                status="ACP reply was empty",
+                error="ACP returned empty reply",
+                touch=True,
+            )
+            logger.error(f"[{agent_name}] ACP returned empty response after {duration_ms}ms")
+            return _EMPTY_REPLY_FALLBACK
+
+        await _set_agent_meta(
+            activity="thinking",
+            status="Reply ready",
+            error="",
+            touch=True,
+        )
+        logger.info(
+            f"[{agent_name}] ← ACP: reply_chars={len(full_text)} "
+            f"sentences_streamed={len(_spoken_sentences)} duration_ms={duration_ms}"
+        )
+        return full_text
+
+    async def _ask_openclaw_legacy(human_text: str, sender: str) -> str:
+        """Legacy OpenClaw call via docker exec (non-streaming)."""
+        message, preamble_added = await _build_prompt(human_text, sender)
+
+        await _set_agent_meta(
+            activity="calling_openclaw",
+            status="Processing voice input",
+            error="",
+            touch=True,
+        )
+        logger.info(
+            f"[{agent_name}] → OpenClaw: sender={sender} prompt_chars={len(message)} "
             f"preamble={'yes' if preamble_added else 'no'}"
         )
         started = time.monotonic()
         try:
             result = await send_to_openclaw(
-                agent_name, message, session_id=_session_id, timeout=30,
+                agent_name, message, session_id=_session_id, timeout=45,
             )
-        except Exception as exc:
+        except Exception:
             await _set_agent_meta(
                 activity="error",
                 status="Bridge request failed",
@@ -385,6 +629,16 @@ async def entrypoint(ctx: JobContext):
             f"[{agent_name}] ← OpenClaw: reply_chars={len(str(classification['spoken_text']))} duration_ms={duration_ms}"
         )
         return str(classification["spoken_text"])
+
+    async def _ask_agent(human_text: str, sender: str) -> str:
+        """Route to ACP (streaming) or legacy OpenClaw, with fallback."""
+        if _ACP_ENABLED:
+            try:
+                return await _ask_acp_streaming(human_text, sender)
+            except Exception:
+                logger.warning(f"[{agent_name}] ACP failed, falling back to legacy bridge")
+                return await _ask_openclaw_legacy(human_text, sender)
+        return await _ask_openclaw_legacy(human_text, sender)
 
     async def _get_response(text: str, sender: str) -> str:
         """Route to vision (direct Claude API) or OpenClaw based on intent."""
@@ -460,7 +714,7 @@ async def entrypoint(ctx: JobContext):
                 touch=True,
             )
             return cleaned
-        return await _ask_openclaw(text, sender)
+        return await _ask_agent(text, sender)
 
     # Regex for direct address: name at start, or "hey/hi/yo name", or "name,"
     # This prevents false positives like "I see Loki here" triggering Loki
@@ -508,8 +762,37 @@ async def entrypoint(ctx: JobContext):
         """Find the name of the human participant in the room."""
         for p in ctx.room.remote_participants.values():
             if p.kind == rtc.ParticipantKind.PARTICIPANT_KIND_STANDARD:
-                return p.name or p.identity
+                return _sanitize_name(p.name or p.identity)
         return "someone"
+
+    def _get_room_participants() -> list[str]:
+        """List all participants in the room (humans and agents)."""
+        names = []
+        for p in ctx.room.remote_participants.values():
+            pname = _sanitize_name(p.name or p.identity)
+            if p.kind == rtc.ParticipantKind.PARTICIPANT_KIND_AGENT:
+                names.append(f"{pname} (agent)")
+            else:
+                names.append(pname)
+        return names
+
+    def _build_system_prompt() -> str:
+        """Build a system prompt that grounds the agent in the Agora voice room."""
+        participants = _get_room_participants()
+        participant_str = ", ".join(participants) if participants else "unknown"
+        return (
+            f"PLATFORM CONTEXT: You are {agent_name}, currently in the "
+            f"Agora voice room '{room_name}' (Skynet-Comms). "
+            f"This is a REAL-TIME VOICE conversation — not Telegram, not Discord, "
+            f"not WhatsApp. You are speaking through Agora TTS right now. "
+            f"Participants in this room: {participant_str}.\n"
+            f"CROSS-SESSION TOOL: You have the acp_bus_query tool available. "
+            f"When asked about what happened in other sessions (Telegram, Discord), "
+            f"or what other agents/users said elsewhere, you MUST call "
+            f"acp_bus_query(topic='room:skynet-comms') to check. "
+            f"Do NOT say you can't access other sessions — USE the tool to check. "
+            f"The ACP Event Bus connects all your sessions across platforms."
+        )
 
     # Cascade breaker: track when we last replied to an agent message
     _last_agent_reply_time: list[float] = [0.0]
@@ -559,14 +842,19 @@ async def entrypoint(ctx: JobContext):
             await asyncio.sleep(0.3)
             waited += 0.3
 
-    async def _say_and_echo(text: str, *, preserve_error: bool = False):
-        """Speak text via TTS and echo to chat channels."""
-        await _set_agent_meta(
-            activity="speaking",
-            status="Speaking response",
-            touch=True,
-        )
-        await session.say(text)
+    async def _say_and_echo(text: str, *, preserve_error: bool = False, already_spoken: bool = False):
+        """Speak text via TTS and echo to chat channels.
+
+        When *already_spoken* is True (ACP streaming already spoke sentences
+        progressively), skip the TTS call and only echo to chat.
+        """
+        if not already_spoken:
+            await _set_agent_meta(
+                activity="speaking",
+                status="Speaking response",
+                touch=True,
+            )
+            await session.say(text)
         await _send_chat_echo(text)
         await _set_agent_meta(
             state="idle",
@@ -630,8 +918,15 @@ async def entrypoint(ctx: JobContext):
             touch=True,
         )
 
-    async def _get_spoken_response(text: str, sender: str) -> tuple[str, bool]:
-        """Get a reply while guaranteeing a spoken fallback on failure/empties."""
+    async def _get_spoken_response(text: str, sender: str) -> tuple[str, bool, bool]:
+        """Get a reply while guaranteeing a spoken fallback on failure/empties.
+
+        Returns (response_text, preserve_error, already_spoken).
+        *already_spoken* is True when ACP streaming already piped text to TTS.
+        """
+        # Track whether ACP streaming spoke the response progressively
+        _acp_streamed = _ACP_ENABLED and not is_vision_request(text)
+
         try:
             response = await _get_response(text, sender)
         except Exception:
@@ -642,11 +937,11 @@ async def entrypoint(ctx: JobContext):
                 touch=True,
             )
             logger.exception(f"[{agent_name}] Response generation crashed")
-            return _OPENCLAW_FALLBACK, True
+            return _OPENCLAW_FALLBACK, True, False
 
         cleaned, used_fallback = ensure_spoken_response_text(response, _EMPTY_REPLY_FALLBACK)
         if not used_fallback:
-            return cleaned, False
+            return cleaned, False, _acp_streamed
 
         await _set_agent_meta(
             activity="error",
@@ -655,7 +950,7 @@ async def entrypoint(ctx: JobContext):
             touch=True,
         )
         logger.error(f"[{agent_name}] Response pipeline produced empty text")
-        return _EMPTY_REPLY_FALLBACK, True
+        return _EMPTY_REPLY_FALLBACK, True, False
 
     async def _handle_human_input(text: str, sender: str):
         """Process human input through turn-taking → OpenClaw → TTS."""
@@ -673,8 +968,8 @@ async def entrypoint(ctx: JobContext):
         if _human_mentions_us(text) and not _human_mentions_both(text):
             await session.interrupt()
             await _broadcast_thinking()
-            response, preserve_error = await _get_spoken_response(text, sender)
-            await _say_and_echo(response, preserve_error=preserve_error)
+            response, preserve_error, already_spoken = await _get_spoken_response(text, sender)
+            await _say_and_echo(response, preserve_error=preserve_error, already_spoken=already_spoken)
             return
 
         # Both agents mentioned, or generic message: staggered turn-taking
@@ -689,8 +984,8 @@ async def entrypoint(ctx: JobContext):
                 await asyncio.sleep(0.5)
             await session.interrupt()
             await _broadcast_thinking()
-            response, preserve_error = await _get_spoken_response(text, sender)
-            await _say_and_echo(response, preserve_error=preserve_error)
+            response, preserve_error, already_spoken = await _get_spoken_response(text, sender)
+            await _say_and_echo(response, preserve_error=preserve_error, already_spoken=already_spoken)
             return
 
         # Generic message (no names): staggered delay, only one responds
@@ -712,8 +1007,8 @@ async def entrypoint(ctx: JobContext):
             return
 
         await session.interrupt()
-        response, preserve_error = await _get_spoken_response(text, sender)
-        await _say_and_echo(response, preserve_error=preserve_error)
+        response, preserve_error, already_spoken = await _get_spoken_response(text, sender)
+        await _say_and_echo(response, preserve_error=preserve_error, already_spoken=already_spoken)
 
     # --- Text input callback (human typed chat only — voice goes through user_input_transcribed) ---
     async def _chat_input_cb(sess: AgentSession, ev):
@@ -734,7 +1029,7 @@ async def entrypoint(ctx: JobContext):
         await _set_agent_meta(
             state="listening",
             activity="listening",
-            status=f"Reading chat from {sender}",
+            status="Reading chat input",
             error="",
             touch=True,
         )
@@ -771,7 +1066,7 @@ async def entrypoint(ctx: JobContext):
         sender_name = sender_identity
         p = ctx.room.remote_participants.get(sender_identity)
         if p:
-            sender_name = p.name or p.attributes.get("agent_name") or p.identity
+            sender_name = _sanitize_name(p.name or p.attributes.get("agent_name") or p.identity)
 
         # Skip human messages (handled by text_input_cb)
         if p and p.kind == rtc.ParticipantKind.PARTICIPANT_KIND_STANDARD:
@@ -803,9 +1098,9 @@ async def entrypoint(ctx: JobContext):
         await asyncio.sleep(0.6)
         await session.interrupt()
         await _broadcast_thinking()
-        response, preserve_error = await _get_spoken_response(text, sender_name)
+        response, preserve_error, already_spoken = await _get_spoken_response(text, sender_name)
         _record_auto_agent_chain_turn(time.monotonic())
-        await _say_and_echo(response, preserve_error=preserve_error)
+        await _say_and_echo(response, preserve_error=preserve_error, already_spoken=already_spoken)
 
     def _handle_agent_chat(reader: rtc.TextStreamReader, sender_identity: str):
         asyncio.create_task(_handle_agent_chat_async(reader, sender_identity))
@@ -813,6 +1108,15 @@ async def entrypoint(ctx: JobContext):
     # --- Cleanup ---
     async def _cleanup():
         logger.info(f"Agent '{agent_name}' shutting down in room '{room_name}'")
+        try:
+            await _bus.close()
+        except Exception:
+            pass
+        if _ACP_ENABLED:
+            try:
+                await _acp_close()
+            except Exception:
+                pass
         try:
             await session.aclose()
         except Exception:
