@@ -8,7 +8,6 @@ import { AccessToken, AgentDispatchClient, RoomServiceClient } from 'livekit-ser
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocketServer, WebSocket } from 'ws';
-import { PtyManager } from './terminal/ptyManager.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -69,10 +68,6 @@ interface ThermalEvent {
 const roomAgentSnapshots = new Map<string, Map<string, AgentSnapshot>>();
 const observabilityEvents: ObservabilityEvent[] = [];
 const observabilityClients = new Map<WebSocket, string | null>();
-const terminalClients = new Map<WebSocket, string>();
-const terminalListeners = new Map<WebSocket, Array<{ event: string; handler: (...args: unknown[]) => void }>>();
-
-let ptyManager: PtyManager | null = null;
 
 function cleanSnapshotText(value: unknown, maxLength: number): string {
   if (typeof value !== 'string') return '';
@@ -800,141 +795,10 @@ app.get('/{*splat}', (_req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-function removeTerminalListeners(ws: WebSocket): void {
-  if (!ptyManager) return;
-  const listeners = terminalListeners.get(ws);
-  if (!listeners) return;
-  for (const listener of listeners) {
-    ptyManager.off(listener.event, listener.handler);
-  }
-  terminalListeners.delete(ws);
-}
-
-function addTerminalListener(ws: WebSocket, event: string, handler: (...args: unknown[]) => void): void {
-  if (!ptyManager) return;
-  ptyManager.on(event, handler);
-  const listeners = terminalListeners.get(ws) || [];
-  listeners.push({ event, handler });
-  terminalListeners.set(ws, listeners);
-}
-
-function sendTerminalMessage(ws: WebSocket, payload: unknown): void {
-  sendJson(ws, payload);
-}
-
-async function handleCreateTerminalSession(
-  ws: WebSocket,
-  payload: {
-    name?: string;
-    cols?: number;
-    rows?: number;
-    workingDir?: string;
-    shell?: string;
-  },
-): Promise<void> {
-  if (!ptyManager) {
-    sendTerminalMessage(ws, { type: 'error', payload: { error: 'Terminal unavailable' } });
-    return;
-  }
-
-  const { sessionId, sessionInfo } = await ptyManager.createSession(payload);
-  terminalClients.set(ws, sessionId);
-  removeTerminalListeners(ws);
-
-  addTerminalListener(ws, `data:${sessionId}`, (data) => {
-    sendTerminalMessage(ws, {
-      type: 'data',
-      payload: { sessionId, data },
-    });
-  });
-
-  addTerminalListener(ws, `exit:${sessionId}`, (exitInfo) => {
-    sendTerminalMessage(ws, {
-      type: 'exit',
-      payload: { sessionId, ...(exitInfo as Record<string, unknown>) },
-    });
-    terminalClients.delete(ws);
-    removeTerminalListeners(ws);
-  });
-
-  sendTerminalMessage(ws, {
-    type: 'session_created',
-    payload: { sessionId, sessionInfo },
-  });
-}
-
-async function handleTerminalSocketMessage(ws: WebSocket, raw: string): Promise<void> {
-  if (!ptyManager) {
-    sendTerminalMessage(ws, { type: 'error', payload: { error: 'Terminal unavailable' } });
-    return;
-  }
-
-  let message: any;
-  try {
-    message = JSON.parse(raw);
-  } catch {
-    sendTerminalMessage(ws, { type: 'error', payload: { error: 'Invalid terminal message' } });
-    return;
-  }
-
-  const payload = message?.payload || {};
-  switch (message?.type) {
-    case 'create_session':
-      await handleCreateTerminalSession(ws, payload);
-      break;
-    case 'input':
-      ptyManager.sendInput(payload.sessionId, payload.input?.text || '');
-      break;
-    case 'resize':
-      ptyManager.resizeSession(payload.sessionId, Number(payload.cols) || 100, Number(payload.rows) || 28);
-      break;
-    case 'kill_session':
-      await ptyManager.killSession(payload.sessionId);
-      break;
-    case 'list_sessions':
-      sendTerminalMessage(ws, {
-        type: 'sessions_list',
-        payload: { sessions: ptyManager.getSessions() },
-      });
-      break;
-    case 'attach': {
-      const sessionId = payload.sessionId;
-      if (!ptyManager.hasSession(sessionId)) {
-        sendTerminalMessage(ws, { type: 'error', payload: { error: 'Session not found' } });
-        break;
-      }
-      terminalClients.set(ws, sessionId);
-      removeTerminalListeners(ws);
-      addTerminalListener(ws, `data:${sessionId}`, (data) => {
-        sendTerminalMessage(ws, {
-          type: 'data',
-          payload: { sessionId, data },
-        });
-      });
-      addTerminalListener(ws, `exit:${sessionId}`, (exitInfo) => {
-        sendTerminalMessage(ws, {
-          type: 'exit',
-          payload: { sessionId, ...(exitInfo as Record<string, unknown>) },
-        });
-        terminalClients.delete(ws);
-        removeTerminalListeners(ws);
-      });
-      sendTerminalMessage(ws, { type: 'attached', payload: { sessionId } });
-      break;
-    }
-    default:
-      sendTerminalMessage(ws, { type: 'error', payload: { error: 'Unknown terminal action' } });
-  }
-}
-
 async function startServer(): Promise<void> {
-  await PtyManager.initialize();
-  ptyManager = new PtyManager();
-
   const server = createServer(app);
 
   const observabilityWss = new WebSocketServer({ noServer: true });
-  const terminalWss = new WebSocketServer({ noServer: true });
 
   observabilityWss.on('connection', (ws, req) => {
     const url = new URL(req.url || '/', 'http://127.0.0.1');
@@ -950,27 +814,11 @@ async function startServer(): Promise<void> {
     });
   });
 
-  terminalWss.on('connection', (ws) => {
-    ws.on('message', async (rawData) => {
-      await handleTerminalSocketMessage(ws, rawData.toString());
-    });
-    ws.on('close', () => {
-      terminalClients.delete(ws);
-      removeTerminalListeners(ws);
-    });
-  });
-
   server.on('upgrade', (req, socket, head) => {
     const url = new URL(req.url || '/', 'http://127.0.0.1');
     if (url.pathname === '/api/observability/stream') {
       observabilityWss.handleUpgrade(req, socket, head, (ws) => {
         observabilityWss.emit('connection', ws, req);
-      });
-      return;
-    }
-    if (url.pathname === '/api/terminal/ws') {
-      terminalWss.handleUpgrade(req, socket, head, (ws) => {
-        terminalWss.emit('connection', ws, req);
       });
       return;
     }
@@ -989,8 +837,6 @@ async function startServer(): Promise<void> {
 
   const shutdown = async () => {
     for (const ws of observabilityClients.keys()) ws.close();
-    for (const ws of terminalClients.keys()) ws.close();
-    await ptyManager?.cleanup();
     server.close();
   };
 

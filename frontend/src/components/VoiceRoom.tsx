@@ -25,7 +25,6 @@ import './VoiceRoom.css';
 
 const AgentModel3D = lazy(() => import('./AgentModel3D'));
 const OpenClawEventsPanel = lazy(() => import('./OpenClawEventsPanel'));
-const TerminalPanel = lazy(() => import('./TerminalPanel'));
 
 interface VoiceRoomProps {
   onLeave: () => void;
@@ -134,7 +133,7 @@ export function VoiceRoom({ onLeave, roomName }: VoiceRoomProps) {
   const [dispatchingAgents, setDispatchingAgents] = useState<Set<string>>(new Set());
   const [agentTelemetry, setAgentTelemetry] = useState<Record<string, AgentTelemetry>>({});
   const [telemetryNow, setTelemetryNow] = useState<number>(() => Date.now());
-  const [sidebarTab, setSidebarTab] = useState<'chat' | 'openclaw' | 'terminal'>('chat');
+  const [sidebarTab, setSidebarTab] = useState<'chat' | 'openclaw'>('chat');
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     if (typeof window === 'undefined') return DEFAULT_SIDEBAR_WIDTH;
     const raw = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
@@ -836,7 +835,7 @@ export function VoiceRoom({ onLeave, roomName }: VoiceRoomProps) {
               <span className="vr-sidebar-summary-label">Ops</span>
               <span className="vr-sidebar-summary-value">{agentOnlineCount} live</span>
               <span className="vr-sidebar-summary-meta">
-                {agentOfflineCount} offline · OpenClaw and terminal ready
+                {agentOfflineCount} offline
               </span>
             </div>
           </div>
@@ -853,12 +852,6 @@ export function VoiceRoom({ onLeave, roomName }: VoiceRoomProps) {
               onClick={() => setSidebarTab('openclaw')}
             >
               OpenClaw
-            </button>
-            <button
-              className={`vr-sidebar-tab ${sidebarTab === 'terminal' ? 'active' : ''}`}
-              onClick={() => setSidebarTab('terminal')}
-            >
-              Terminal
             </button>
           </div>
 
@@ -931,11 +924,6 @@ export function VoiceRoom({ onLeave, roomName }: VoiceRoomProps) {
             </Suspense>
           )}
 
-          {sidebarTab === 'terminal' && (
-            <Suspense fallback={<div className="vr-sidebar-loading">Loading terminal...</div>}>
-              <TerminalPanel roomName={roomName} />
-            </Suspense>
-          )}
         </aside>
       </div>
     </div>
