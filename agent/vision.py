@@ -19,7 +19,7 @@ import openai
 from livekit import rtc
 from PIL import Image
 
-logger = logging.getLogger("skynet-agent")
+logger = logging.getLogger("agora-vision")
 
 # ---------------------------------------------------------------------------
 # Intent detection

@@ -61,7 +61,7 @@ from vision import is_vision_request, capture_frame, ask_claude_vision
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"), override=True)
 
-logger = logging.getLogger("skynet-agent")
+logger = logging.getLogger("agora-agent")
 
 agent_name = os.environ.get("AGENT_NAME", "Laira")
 

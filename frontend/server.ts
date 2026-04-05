@@ -18,7 +18,7 @@ const LIVEKIT_HTTP_URL = process.env.LIVEKIT_HTTP_URL || 'http://127.0.0.1:7880'
 const ADMIN_SECRET = process.env.ADMIN_API_SECRET || '';
 const AGENT_NAMES = (process.env.AGENT_NAMES || 'Laira,Loki').split(',').map((s) => s.trim());
 const AUTO_DISPATCH_ON_JOIN = process.env.AUTO_DISPATCH_ON_JOIN === 'true';
-const SUPERCLAUDE_EVENT_FORWARD_URL = (process.env.SUPERCLAUDE_EVENT_FORWARD_URL || '').trim();
+const EVENT_FORWARD_URL = (process.env.EVENT_FORWARD_URL || '').trim();
 const MAX_OBSERVABILITY_EVENTS = Math.max(
   50,
   parseInt(process.env.MAX_OBSERVABILITY_EVENTS || '300', 10) || 300,
@@ -444,9 +444,9 @@ function sendJson(ws: WebSocket, payload: unknown): void {
 }
 
 async function forwardObservabilityEvent(event: ObservabilityEvent): Promise<void> {
-  if (!SUPERCLAUDE_EVENT_FORWARD_URL) return;
+  if (!EVENT_FORWARD_URL) return;
   try {
-    await fetch(SUPERCLAUDE_EVENT_FORWARD_URL, {
+    await fetch(EVENT_FORWARD_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(event),

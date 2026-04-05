@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 
-const WORDS_CYAN = ['SKYNET', 'COMMS', 'VOICE', 'AGENT', 'STREAM', 'NODE'];
-const WORDS_PURPLE = ['LAIRA', 'LOKI', 'CLAUDE', 'GPT', 'AI', 'LLM'];
+const WORDS_CYAN = ['AGORA', 'COMMS', 'VOICE', 'AGENT', 'STREAM', 'NODE'];
+const WORDS_PURPLE = ['HERMES', 'OPENCLAW', 'ANTHROPIC', 'OPENAI', 'AI', 'LLM'];
 const WORDS_BLUE = ['LiveKit', 'WebRTC', 'STT', 'TTS', 'SIP', 'RTC'];
 const WORDS_YELLOW = ['async', 'await', '=>', '{}', '()', '[];'];
 
