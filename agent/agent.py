@@ -1001,6 +1001,20 @@ async def entrypoint(ctx: JobContext):
         """Process human input through turn-taking → OpenClaw → TTS."""
         # Fix STT misrecognitions of agent names before any name checks
         text = _correct_names(text)
+
+        # Global dedup: skip if we already processed this exact text recently
+        # (catches voice→chat echo duplication even after name correction)
+        dedup_key = f"human:{text.strip().lower()}"
+        now = time.monotonic()
+        prev = _processed_texts.get(dedup_key)
+        if prev and now - prev < _TEXT_DEDUP_WINDOW:
+            logger.debug(f"[{agent_name}] Skipping duplicate human input: {text[:40]}")
+            return
+        _processed_texts[dedup_key] = now
+        # Prune old dedup entries
+        for k in [k for k, v in _processed_texts.items() if now - v > _TEXT_DEDUP_WINDOW * 3]:
+            del _processed_texts[k]
+
         _reset_auto_agent_chain()
 
         # Skip if human addresses a different agent (not us)
@@ -1271,19 +1285,22 @@ async def entrypoint(ctx: JobContext):
                 )
             )
 
-            # Mark as processed so text_input_cb doesn't double-handle
+            # Mark BOTH original and name-corrected text as processed
+            # so text_input_cb doesn't double-handle after echo
             _voice_processed[text.lower()] = time.monotonic()
+            corrected = _correct_names(text)
+            if corrected.lower() != text.lower():
+                _voice_processed[corrected.lower()] = time.monotonic()
             # Prune old entries
             now = time.monotonic()
             for k in [k for k, v in _voice_processed.items() if now - v > _VOICE_DEDUP_WINDOW]:
                 del _voice_processed[k]
 
-            asyncio.create_task(_process_voice_input(text, sender))
+            asyncio.create_task(_process_voice_input(corrected, sender))
 
         async def _process_voice_input(text: str, sender: str):
             """Echo voice transcription to chat (so it's visible) and process it."""
-            # Fix STT misrecognitions of agent names
-            text = _correct_names(text)
+            # text is already name-corrected by _on_user_input_transcribed
 
             # Echo the transcription to lk.chat with the human's name so it shows in UI
             # Only the primary agent echoes to avoid duplicate chat messages
