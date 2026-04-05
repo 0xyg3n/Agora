@@ -1,38 +1,61 @@
 <p align="center">
   <h1 align="center">Agora</h1>
-  <p align="center">Real-time voice rooms where humans and AI agents collaborate across platforms</p>
+  <p align="center"><strong>Real-time voice rooms where humans and AI agents collaborate across platforms</strong></p>
+  <p align="center"><em>Open-source, self-hosted, model-agnostic. Zero voice API costs.</em></p>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.10+-blue?logo=python&logoColor=white" alt="Python 3.10+">
-  <img src="https://img.shields.io/badge/node-18+-green?logo=node.js&logoColor=white" alt="Node.js 18+">
-  <img src="https://img.shields.io/badge/LiveKit-1.5+-purple?logo=webrtc&logoColor=white" alt="LiveKit">
-  <img src="https://img.shields.io/badge/license-MIT-brightgreen" alt="MIT License">
-  <img src="https://img.shields.io/badge/tests-57%20passing-brightgreen" alt="Tests">
-  <img src="https://img.shields.io/badge/voice%20APIs-zero%20cost-ff6b6b" alt="Zero Voice API Costs">
+  <a href="https://github.com/0xyg3n/Agora/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-brightgreen" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/tests-83%20passing-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/voice%20pipeline-zero%20cost-ff6b6b" alt="Zero Voice API Costs">
+  <img src="https://img.shields.io/badge/python-3.10+-3776ab?logo=python&logoColor=white" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/TypeScript-React%2019-3178c6?logo=typescript&logoColor=white" alt="TypeScript">
+  <img src="https://img.shields.io/badge/LiveKit-1.5+-7c3aed?logo=webrtc&logoColor=white" alt="LiveKit">
+</p>
+
+<p align="center">
+  <a href="#getting-started">Quick Start</a> &bull;
+  <a href="#architecture">Architecture</a> &bull;
+  <a href="#supported-agent-platforms">Supported Platforms</a> &bull;
+  <a href="#screenshots">Screenshots</a> &bull;
+  <a href="docs/wireguard-mesh.md">Multi-Machine Guide</a>
 </p>
 
 ---
 
-Agora is an open platform for real-time voice collaboration between humans and AI agents. Agents join voice rooms as full participants. They hear you, speak back, and work together. The ACP Event Bus gives every agent awareness of what happens across all connected platforms, from voice rooms to Telegram to Discord.
+Agora is an open platform for real-time voice collaboration between humans and AI agents. Agents join voice rooms as full participants. They hear you, speak back, and work together. The ACP Event Bus gives every agent shared awareness across all connected platforms, from voice rooms to Telegram to Discord.
 
 ### Why Agora
 
-| | Feature | Details |
-|---|---------|---------|
-| **0 API costs for voice** | All speech processing runs locally. No cloud Whisper, no ElevenLabs, no Google Speech. Free forever. |
-| **Any agent platform** | Hermes, OpenClaw, LangChain, Ollama, vLLM, or any OpenAI-compatible endpoint. Plug in and go. |
-| **Cross-session awareness** | Agents know what happens on Telegram, Discord, and voice rooms through the ACP Event Bus. |
-| **Self-hosted and private** | Your voice data never leaves your infrastructure. Run everything on your own hardware. |
-| **Streaming responses** | Agents speak the first sentence while still generating the rest. No awkward silence. |
-| **Multi-machine ready** | Scale across machines with WireGuard mesh. Same protocol, zero changes. |
+**Zero voice API costs** &mdash; [Silero VAD](https://github.com/snakers4/silero-vad), [faster-whisper](https://github.com/SYSTRAN/faster-whisper), and [edge-tts](https://pypi.org/project/edge-tts/) all run locally. No cloud speech APIs, no per-minute billing. Free forever.
+
+**Any agent platform** &mdash; [Hermes Agent](https://github.com/NousResearch/hermes-agent), OpenClaw, [LangChain](https://python.langchain.com/), [Ollama](https://ollama.com/), [vLLM](https://docs.vllm.ai/), or any OpenAI-compatible HTTP endpoint. Plug in and go.
+
+**Cross-session awareness** &mdash; The ACP Event Bus connects voice rooms, Telegram, and Discord into one shared context. An agent on Telegram knows what happened in the voice room.
+
+**Self-hosted and private** &mdash; Your voice data never leaves your infrastructure. Run everything on your own hardware.
+
+**Streaming responses** &mdash; Agents speak the first sentence while still generating the rest. No awkward silence.
+
+**Multi-machine ready** &mdash; Distribute agents across machines with [WireGuard](https://www.wireguard.com/). Same protocol, zero changes.
+
+### Powered By
+
+<p>
+  <a href="https://livekit.io"><img src="https://img.shields.io/badge/LiveKit-media%20server-7c3aed?logo=webrtc&logoColor=white" alt="LiveKit"></a>
+  <a href="https://anthropic.com"><img src="https://img.shields.io/badge/Anthropic-Claude%20Opus%204.6-d4a574?logo=anthropic&logoColor=white" alt="Anthropic"></a>
+  <a href="https://openai.com"><img src="https://img.shields.io/badge/OpenAI-GPT--5.4-412991?logo=openai&logoColor=white" alt="OpenAI"></a>
+  <a href="https://github.com/snakers4/silero-vad"><img src="https://img.shields.io/badge/Silero-VAD-blue" alt="Silero VAD"></a>
+  <a href="https://github.com/SYSTRAN/faster-whisper"><img src="https://img.shields.io/badge/faster--whisper-STT-blue" alt="faster-whisper"></a>
+  <a href="https://pypi.org/project/edge-tts/"><img src="https://img.shields.io/badge/edge--tts-TTS-blue" alt="edge-tts"></a>
+  <a href="https://react.dev"><img src="https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=white" alt="React"></a>
+</p>
 
 ---
 
 ## Table of Contents
 
 - [Screenshots](#screenshots)
-- [Built and Tested With](#built-and-tested-with)
 - [What Is Agora](#what-is-agora)
 - [Architecture](#architecture)
   - [System Overview](#system-overview)
@@ -68,30 +91,17 @@ Agora is an open platform for real-time voice collaboration between humans and A
 
 ---
 
-## Built and Tested With
-
-| Component | Technology | Details |
-|-----------|-----------|---------|
-| **Hermes Agent** | Anthropic Claude Opus 4.6 | Frontier reasoning, SSE streaming, native tool system |
-| **OpenClaw Agent** | OpenAI GPT-5.4 Codex | Full autonomy, browser access, multi-model routing |
-| **Voice Pipeline** | Silero VAD + faster-whisper + edge-tts | Fully local, zero API keys, zero cost |
-| **Media Server** | LiveKit 1.8 | WebRTC based real-time audio and video |
-| **Event Bus** | Custom WebSocket pub/sub | In-memory ring buffer, sub-millisecond latency |
-| **Cross-Session** | Native gateway tools | `acp_bus_query` registered in Hermes and OpenClaw |
-
-> **Model agnostic by design.** Agora works with any agent that exposes an OpenAI-compatible HTTP API. Tested and validated against frontier models for production-grade performance.
-
----
-
 ## What Is Agora
 
 Agora brings humans and AI agents into the same voice room. Everyone hears each other, speaks naturally, and collaborates in real time.
 
 - **Live voice rooms** where AI agents are first-class participants, not bots watching from the side
-- **Works with any LLM backend** including Hermes Agent, OpenClaw, LangChain, Ollama, vLLM, or any OpenAI-compatible endpoint
-- **Fully local voice processing** using Silero VAD, faster-whisper STT, and edge-tts with zero cloud dependencies and zero API costs
-- **Cross-session awareness** through the ACP Event Bus, which connects voice rooms, Telegram, and Discord into one shared context
+- **Works with any LLM backend** including [Hermes Agent](https://github.com/NousResearch/hermes-agent), OpenClaw, [LangChain](https://python.langchain.com/), [Ollama](https://ollama.com/), [vLLM](https://docs.vllm.ai/), or any OpenAI-compatible endpoint
+- **Fully local voice processing** using [Silero VAD](https://github.com/snakers4/silero-vad), [faster-whisper](https://github.com/SYSTRAN/faster-whisper), and [edge-tts](https://pypi.org/project/edge-tts/) with zero cloud dependencies
+- **Cross-session awareness** through the ACP Event Bus, connecting voice rooms, Telegram, and Discord into one shared context
 - **Progressive TTS** where the agent speaks the first sentence while still generating the rest, eliminating dead air
+
+> **Model agnostic by design.** Agora works with any agent that exposes an OpenAI-compatible HTTP API. Tested with Anthropic Claude Opus 4.6 and OpenAI GPT-5.4 for production-grade performance.
 
 ---
 
@@ -244,7 +254,7 @@ Agora does not care where your agent runs or what powers it. If it exposes an HT
 
 ### Hermes Agent (native support)
 
-Open-source agent framework by Nous Research. Fully self-hostable.
+Open-source agent framework by [Nous Research](https://github.com/NousResearch). Fully self-hostable.
 
 - Direct HTTP streaming via the Hermes API server
 - SSE streaming for progressive TTS so the agent speaks while still generating
@@ -264,7 +274,7 @@ Open-source autonomous agent framework with WebSocket gateway, browser automatio
 
 ### Any OpenAI-Compatible Agent
 
-Any agent that exposes `/v1/chat/completions` works out of the box. This includes LangChain servers, LlamaIndex agents, FastAPI wrappers, vLLM endpoints, Ollama, and any other OpenAI-compatible API.
+Any agent that exposes `/v1/chat/completions` works out of the box. This includes [LangChain](https://python.langchain.com/) servers, [LlamaIndex](https://www.llamaindex.ai/) agents, [FastAPI](https://fastapi.tiangolo.com/) wrappers, [vLLM](https://docs.vllm.ai/) endpoints, [Ollama](https://ollama.com/), and any other OpenAI-compatible API.
 
 ```python
 # agent/agent_registry.py
@@ -323,7 +333,7 @@ graph LR
 
 ## Scaling with WireGuard
 
-WireGuard creates a private encrypted mesh network between machines. Agents on any machine in the mesh can connect to the same ACP Event Bus, so they share context and collaborate in the same voice room even when running on different physical hosts.
+[WireGuard](https://www.wireguard.com/) creates a private encrypted mesh network between machines. Agents on any machine in the mesh can connect to the same ACP Event Bus, so they share context and collaborate in the same voice room even when running on different physical hosts.
 
 This is just networking. No special protocols, no new dependencies. The same WebSocket bus, the same agent code, just reachable over a private network instead of localhost.
 
@@ -370,7 +380,7 @@ graph TB
 **What this enables:**
 - Distribute agents across locations while keeping them connected to the same bus
 - Run agents at home, at work, and on cloud servers, all in the same voice room
-- Scale by adding machines to the WireGuard mesh instead of putting everything on one host
+- Scale by adding machines to the [WireGuard](https://www.wireguard.com/) mesh instead of putting everything on one host
 - All traffic between machines is encrypted, no public internet exposure
 - Already tested and proven between a VPS and a home PC
 
@@ -382,10 +392,10 @@ Full implementation guide: [docs/wireguard-mesh.md](docs/wireguard-mesh.md)
 
 ### Prerequisites
 
-- Docker (for agent containers)
-- Python 3.10 or newer
-- Node.js 18 or newer
-- A LiveKit server (or use the included docker-compose)
+- [Docker](https://docs.docker.com/get-docker/) (for agent containers)
+- [Python](https://www.python.org/) 3.10 or newer
+- [Node.js](https://nodejs.org/) 18 or newer
+- A [LiveKit](https://livekit.io) server (or use the included docker-compose)
 - At least one agent gateway with an OpenAI-compatible HTTP endpoint
 
 ### Installation
@@ -491,21 +501,18 @@ ssh -L 3210:127.0.0.1:3210 -L 7880:127.0.0.1:7880 yourserver
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LIVEKIT_URL` | `ws://localhost:7880` | LiveKit WebSocket URL |
+| `LIVEKIT_URL` | `ws://localhost:7880` | [LiveKit](https://livekit.io) WebSocket URL |
 | `LIVEKIT_API_KEY` | | LiveKit API key |
 | `LIVEKIT_API_SECRET` | | LiveKit API secret |
-| `AGENT_NAME` | `Laira` | Agent name (set per process) |
+| `AGENT_NAME` | | Agent name (set per process) |
 | `ACP_ENABLED` | `true` | Enable the ACP bridge |
-| `ACP_LAIRA_URL` | `http://127.0.0.1:3133` | Hermes gateway URL |
-| `ACP_LOKI_URL` | `http://172.20.0.3:8642` | OpenClaw shim URL |
-| `ACP_STREAMING_AGENTS` | `laira,loki` | Comma-separated agents with SSE streaming |
+| `ACP_STREAMING_AGENTS` | | Comma-separated agents with SSE streaming |
 | `ACP_BUS_HOST` | `0.0.0.0` | Event Bus bind address |
 | `ACP_BUS_PORT` | `9090` | Event Bus port |
-| `ACP_BUS_SECRET` | _(empty)_ | Bus authentication secret (optional) |
-| `EDGE_TTS_VOICE_<NAME>` | per agent | TTS voice for a specific agent |
-| `WHISPER_MODEL` | `small` | faster-whisper model size |
+| `ACP_BUS_SECRET` | _(empty)_ | Bus authentication secret (recommended for production) |
+| `EDGE_TTS_VOICE_<NAME>` | per agent | [edge-tts](https://pypi.org/project/edge-tts/) voice for a specific agent |
+| `WHISPER_MODEL` | `small` | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) model size |
 | `LLM_BACKEND` | `anthropic` | LLM backend: `anthropic`, `openai`, or `ollama` |
-| `ANTHROPIC_MODEL` | `claude-sonnet-4-20250514` | Anthropic model identifier |
 
 ---
 
@@ -525,7 +532,7 @@ agora/
 │   ├── whisper_stt_plugin.py # Speech-to-text plugin
 │   ├── vision.py             # Vision and camera module
 │   ├── runtime_utils.py      # Helper utilities
-│   └── tests/                # Test suite (57 tests)
+│   └── tests/                # Test suite (83 tests)
 ├── frontend/
 │   ├── server.ts             # Token server and operations API
 │   └── src/                  # React user interface
@@ -543,12 +550,12 @@ agora/
 
 ## Security
 
-- **Authentication**: API key validation on agent shims and optional bus authentication secret
-- **Input sanitization**: Room names, session IDs, and participant names validated against path traversal and header injection
-- **Request limits**: 1 MB body size limit on all API shim endpoints
-- **Error handling**: Internal errors and stack traces are never exposed to clients
-- **Session isolation**: Per-session identifiers include random suffixes to prevent hijacking
-- **TTS sanitization**: Code blocks, URLs, and terminal output are stripped before voice synthesis
+- **Authentication** on agent shims and optional bus authentication secret
+- **Input sanitization** for room names, session IDs, and participant names against injection attacks
+- **Request limits** of 1 MB on all API shim endpoints
+- **Error scrubbing** so internal errors and stack traces are never exposed to clients
+- **Session isolation** with random suffixes to prevent hijacking
+- **TTS sanitization** to strip code blocks, URLs, and terminal output before voice synthesis
 
 25 security findings were identified and resolved during development.
 
@@ -563,10 +570,10 @@ python -m pytest tests/ -v
 ```
 
 ```
-57 passed in 0.8s
+83 passed
 ```
 
-Coverage includes the ACP protocol, event bus, agent registry, sentence splitting, bridge communication, and runtime utilities.
+Coverage includes the ACP protocol, event bus, bus client, agent registry, TTS sanitizer, ACP bridge, sentence splitting, and runtime utilities.
 
 ---
 
