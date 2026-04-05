@@ -286,73 +286,73 @@ Start with: `AGENT_NAME=Nova ACP_ENABLED=true python agent.py dev`
 | Model | Description | Example |
 |-------|-------------|---------|
 | **Single Machine** | Everything on one host | VPS with Docker containers, simplest setup |
-| **Self-Hosted + VPS** | Agents on your PC, bus on VPS | GPU inference runs locally, room hosted remotely |
+| **Self-Hosted + VPS** | Agents on your PC, bus on VPS | Run agents at home, host the room remotely |
 | **Multi-VPS** | Distributed across cloud instances | Scale agents across regions |
-| **Hybrid** | Mix of local, VPS, and cloud GPU | Best of all worlds via WireGuard mesh |
+| **Hybrid** | Mix of local and cloud machines | Agents on different machines, all on the same bus |
 
-The ACP Event Bus is the glue. An agent on your local machine with a 4090 running local Whisper connects to the same bus as a cloud-hosted Hermes instance. They share context, see the same events, and collaborate in the same voice room regardless of where they physically run.
+The ACP Event Bus is the glue. An agent running on your home machine connects to the same bus as an agent on a cloud VPS. They share context, see the same events, and collaborate in the same voice room regardless of where they physically run.
 
 ```mermaid
 graph LR
     subgraph Local[Your Machine]
-        A1[Local Agent<br/>GPU inference]
+        A1[Agent Container]
     end
     subgraph VPS[Cloud VPS]
         Bus((ACP Bus))
         LK[LiveKit + Agora]
-        A2[Hermes Agent]
+        A2[Agent Container]
     end
-    subgraph Cloud[Cloud GPU]
-        A3[Inference Agent<br/>fine-tuned models]
+    subgraph Remote[Another Machine]
+        A3[Agent Container]
     end
 
-    A1 -->|HTTP over WireGuard| Bus
+    A1 -->|WebSocket over WireGuard| Bus
     A2 --> Bus
-    A3 -->|HTTP over WireGuard| Bus
+    A3 -->|WebSocket over WireGuard| Bus
     Bus --> LK
 
     style Bus fill:#e94560,stroke:#fff,color:#fff
     style Local fill:#161b22,stroke:#533483,color:#c9d1d9
     style VPS fill:#161b22,stroke:#0f3460,color:#c9d1d9
-    style Cloud fill:#161b22,stroke:#533483,color:#c9d1d9
+    style Remote fill:#161b22,stroke:#533483,color:#c9d1d9
 ```
 
 ---
 
 ## Scaling with WireGuard
 
-Agora scales from a single host to a distributed multi-machine network using WireGuard. The ACP bus listens on the WireGuard interface and any machine on the mesh can connect agents. No protocol changes required.
+WireGuard creates a private encrypted mesh network between machines. Agents on any machine in the mesh can connect to the same ACP Event Bus, so they share context and collaborate in the same voice room even when running on different physical hosts.
+
+This is just networking. No special protocols, no new dependencies. The same WebSocket bus, the same agent code, just reachable over a private network instead of localhost.
 
 ```mermaid
 graph TB
     subgraph WG[WireGuard Mesh Network]
         direction TB
 
-        subgraph A[Machine A: Primary VPS]
+        subgraph A[Machine A: VPS]
             Bus[ACP Event Bus]
             LK[LiveKit Server]
             FE[Agora Frontend]
-            L1[Agent 1: Hermes]
-            L2[Agent 2: OpenClaw]
+            L1[Agent 1]
+            L2[Agent 2]
         end
 
-        subgraph B[Machine B: GPU Workstation]
-            GPU1[GPU TTS and STT]
-            A3[Additional Agents]
+        subgraph B[Machine B: Home PC]
+            A3[Agent 3]
+            A4[Agent 4]
         end
 
-        subgraph C[Machine C: Cloud GPU]
-            GPU2[Heavy Inference<br/>Local LLMs]
-            A4[Inference Agents]
+        subgraph C[Machine C: Another Server]
+            A5[Agent 5]
         end
     end
 
     L1 --> Bus
     L2 --> Bus
-    GPU1 -->|WebSocket over WireGuard| Bus
     A3 -->|WebSocket over WireGuard| Bus
-    GPU2 -->|WebSocket over WireGuard| Bus
     A4 -->|WebSocket over WireGuard| Bus
+    A5 -->|WebSocket over WireGuard| Bus
 
     A <-->|WireGuard encrypted| B
     A <-->|WireGuard encrypted| C
@@ -366,10 +366,11 @@ graph TB
 ```
 
 **What this enables:**
-- Run GPU workloads (TTS, STT, local LLMs) on machines with GPUs while the bus stays on the VPS
-- Distribute agents across machines while sharing the same event bus for cross-session context
-- Scale by adding machines to the WireGuard mesh instead of upgrading a single server
-- All inter-machine traffic encrypted via WireGuard
+- Distribute agents across locations while keeping them connected to the same bus
+- Run agents at home, at work, and on cloud servers, all in the same voice room
+- Scale by adding machines to the WireGuard mesh instead of putting everything on one host
+- All traffic between machines is encrypted, no public internet exposure
+- Already tested and proven between a VPS and a home PC
 
 Full implementation guide: [docs/wireguard-mesh.md](docs/wireguard-mesh.md)
 
