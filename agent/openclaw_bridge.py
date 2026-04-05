@@ -34,11 +34,12 @@ _OPENCLAW_EVENT_SOURCE_APP = os.getenv(
 ).strip() or "LiveKitOpenClaw"
 _compatibility_cache: dict[str, tuple[float, dict]] = {}
 
-# Map agent names to their OpenClaw container names
-_CONTAINER_MAP = {
-    "laira": "skynet-laira",
-    "loki": "skynet-loki",
-}
+# Map agent names to their OpenClaw container names (from registry)
+try:
+    from agent_registry import get_container_map
+    _CONTAINER_MAP = get_container_map()
+except ImportError:
+    _CONTAINER_MAP = {"laira": "skynet-laira", "loki": "skynet-loki"}
 
 
 def _get_container(agent_name: str) -> str:

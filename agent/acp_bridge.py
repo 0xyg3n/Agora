@@ -43,20 +43,23 @@ logger = logging.getLogger("acp-bridge")
 # Gateway endpoint map
 # ---------------------------------------------------------------------------
 
-_GATEWAY_URLS: dict[str, str] = {
-    "laira": os.getenv("ACP_LAIRA_URL", "http://127.0.0.1:3133").rstrip("/"),
-    "loki": os.getenv("ACP_LOKI_URL", "http://172.20.0.3:8642").rstrip("/"),
-}
+try:
+    from agent_registry import get_gateway_urls, supports_streaming, agent_names
+    _GATEWAY_URLS: dict[str, str] = get_gateway_urls()
+    _STREAMING_AGENTS: set[str] = {n for n in agent_names() if supports_streaming(n)}
+except ImportError:
+    # Fallback if registry not available
+    _GATEWAY_URLS = {
+        "laira": os.getenv("ACP_LAIRA_URL", "http://127.0.0.1:3133").rstrip("/"),
+        "loki": os.getenv("ACP_LOKI_URL", "http://172.20.0.3:8642").rstrip("/"),
+    }
+    _STREAMING_AGENTS = {
+        name.lower()
+        for name in os.getenv("ACP_STREAMING_AGENTS", "laira").split(",")
+        if name.strip()
+    }
 
 _API_KEY: str = os.getenv("ACP_API_KEY", "").strip()
-
-# Agents whose gateway supports SSE streaming (Hermes API server).
-# Agents not in this set use non-streaming POST and yield the full response.
-_STREAMING_AGENTS: set[str] = {
-    name.lower()
-    for name in os.getenv("ACP_STREAMING_AGENTS", "laira").split(",")
-    if name.strip()
-}
 
 # Reusable session (created lazily, one per process)
 _session: aiohttp.ClientSession | None = None

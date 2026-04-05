@@ -1,14 +1,21 @@
 """Centralized agent configuration registry.
 
-All agent-specific config (URL, voice, container, streaming) is defined
-here.  Adding a new agent only requires adding an entry to AGENTS — no
-code changes in agent.py, acp_bridge.py, or openclaw_bridge.py.
+All agent-specific config (URL, voice, container, streaming, greeting, delay)
+is defined here.  Adding a new agent only requires adding an entry — no code
+changes in agent.py, acp_bridge.py, or openclaw_bridge.py.
+
+Config is loaded from environment variables at import time:
+  AGENT_<NAME>_URL, AGENT_<NAME>_VOICE, AGENT_<NAME>_CONTAINER,
+  AGENT_<NAME>_STREAMING, AGENT_<NAME>_GREETING, AGENT_<NAME>_DELAY
+
+Or use the legacy per-agent env vars (ACP_LAIRA_URL, EDGE_TTS_VOICE_LAIRA, etc.)
+for backward compatibility.
 """
 
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
@@ -19,28 +26,44 @@ class AgentConfig:
     acp_url: str
     voice: str
     streaming: bool = True
+    greeting: str = ""
+    delay: float = 1.0          # Turn-taking stagger delay (seconds)
+    primary: bool = False       # Primary agent echoes transcriptions, wins tiebreaks
 
     @property
     def name_lower(self) -> str:
         return self.name.lower()
 
 
+def _env(name: str, key: str, default: str = "") -> str:
+    """Read AGENT_<NAME>_<KEY> or legacy env var."""
+    upper = name.upper()
+    return os.getenv(f"AGENT_{upper}_{key}", "").strip() or default
+
+
 def _load_agents() -> dict[str, AgentConfig]:
     """Load agent configs from defaults + env var overrides."""
+    # Default agents (backward compatible with existing .env vars)
     defaults = [
         AgentConfig(
             name="Laira",
-            container="skynet-laira",
-            acp_url=os.getenv("ACP_LAIRA_URL", "http://127.0.0.1:3133"),
-            voice=os.getenv("EDGE_TTS_VOICE_LAIRA", "de-DE-SeraphinaMultilingualNeural"),
+            container=_env("Laira", "CONTAINER", "skynet-laira"),
+            acp_url=os.getenv("ACP_LAIRA_URL", _env("Laira", "URL", "http://127.0.0.1:3133")),
+            voice=os.getenv("EDGE_TTS_VOICE_LAIRA", _env("Laira", "VOICE", "de-DE-SeraphinaMultilingualNeural")),
             streaming=True,
+            greeting=_env("Laira", "GREETING", "Hey, Laira here!"),
+            delay=float(_env("Laira", "DELAY", "0.5")),
+            primary=True,
         ),
         AgentConfig(
             name="Loki",
-            container="skynet-loki",
-            acp_url=os.getenv("ACP_LOKI_URL", "http://172.20.0.3:8642"),
-            voice=os.getenv("EDGE_TTS_VOICE_LOKI", "en-US-GuyNeural"),
+            container=_env("Loki", "CONTAINER", "skynet-loki"),
+            acp_url=os.getenv("ACP_LOKI_URL", _env("Loki", "URL", "http://172.20.0.3:8642")),
+            voice=os.getenv("EDGE_TTS_VOICE_LOKI", _env("Loki", "VOICE", "en-US-GuyNeural")),
             streaming=True,
+            greeting=_env("Loki", "GREETING", "Yo, Loki in the house."),
+            delay=float(_env("Loki", "DELAY", "3.5")),
+            primary=False,
         ),
     ]
     # Support additional agents via ACP_EXTRA_AGENTS=name1:url1:voice1,name2:url2:voice2
@@ -94,3 +117,31 @@ def supports_streaming(name: str) -> bool:
     """Check if an agent's gateway supports SSE streaming."""
     agent = AGENTS.get(name.lower())
     return agent.streaming if agent else False
+
+
+def get_greeting(name: str) -> str:
+    """Get the static greeting for an agent."""
+    agent = AGENTS.get(name.lower())
+    return agent.greeting if agent and agent.greeting else f"Hey, {name} here!"
+
+
+def get_delay(name: str) -> float:
+    """Get turn-taking stagger delay for an agent."""
+    agent = AGENTS.get(name.lower())
+    return agent.delay if agent else 1.0
+
+
+def is_primary(name: str) -> bool:
+    """Check if this is the primary agent (wins tiebreaks, echoes transcriptions)."""
+    agent = AGENTS.get(name.lower())
+    return agent.primary if agent else False
+
+
+def get_gateway_urls() -> dict[str, str]:
+    """Return agent_name -> URL map for the ACP bridge."""
+    return {name: a.acp_url.rstrip("/") for name, a in AGENTS.items()}
+
+
+def get_container_map() -> dict[str, str]:
+    """Return agent_name -> container name map for the OpenClaw bridge."""
+    return {name: a.container for name, a in AGENTS.items()}

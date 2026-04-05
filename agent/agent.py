@@ -87,11 +87,20 @@ def _get_stt():
         _stt_instance = WhisperSTT(model_size=whisper_model)
     return _stt_instance
 
-# Known agents for turn-taking
-_AGENT_NAMES = {"laira", "loki"}
+# Known agents for turn-taking (loaded from registry)
+from agent_registry import (
+    agent_names as _get_agent_names,
+    get_greeting as _get_greeting,
+    get_delay as _get_delay,
+    is_primary as _is_primary,
+    get_gateway_urls as _get_gateway_urls,
+    get_container_map as _get_container_map,
+)
+_AGENT_NAMES = _get_agent_names()
 
 # Common STT misrecognitions → correct name
-_NAME_CORRECTIONS = {
+# Auto-generate from agent names if not customized
+_NAME_CORRECTIONS = json.loads(os.environ.get("AGENT_NAME_CORRECTIONS", "{}")) or {
     "lucky": "loki", "lockey": "loki", "locky": "loki",
     "laky": "loki", "loca": "loki", "lokay": "loki",
     "laura": "laira", "lyra": "laira", "lara": "laira",
@@ -113,20 +122,15 @@ def _correct_names(text: str) -> str:
             corrected.append(word)
     return " ".join(corrected)
 
-# Static greetings — zero LLM calls
-_GREETINGS = {
-    "laira": "Hey, Laira here!",
-    "loki": "Yo, Loki in the house.",
-}
+# Static greetings — zero LLM calls (loaded from registry)
+_GREETINGS = {name: _get_greeting(name) for name in _AGENT_NAMES}
 
 server = AgentServer()
 
 
-# Per-agent voice defaults (used when no agent-specific env var is set)
-_DEFAULT_VOICES: dict[str, str] = {
-    "laira": "de-DE-SeraphinaMultilingualNeural",
-    "loki": "en-US-GuyNeural",
-}
+# Per-agent voice defaults (loaded from registry)
+from agent_registry import get_voice as _get_voice_reg
+_DEFAULT_VOICES: dict[str, str] = {name: _get_voice_reg(name) for name in _AGENT_NAMES}
 
 
 def _resolve_voice(name: str) -> str:
@@ -976,7 +980,7 @@ async def entrypoint(ctx: JobContext):
         # When both are mentioned, both should respond but sequentially
         if _human_mentions_both(text):
             # Both addressed: stagger but both respond (Laira first, then Loki)
-            delay = {"laira": 0.5, "loki": 3.5}.get(agent_name.lower(), 1.0)
+            delay = _get_delay(agent_name)
             await asyncio.sleep(delay)
             # Wait for the other agent to finish speaking before we start
             if _is_other_agent_busy():
@@ -1000,8 +1004,8 @@ async def entrypoint(ctx: JobContext):
         await _broadcast_thinking()
         # Small grace period for the other agent to see our claim
         await asyncio.sleep(0.5)
-        # Double-check: if other agent also claimed, Loki yields (deterministic tiebreak)
-        if _is_other_agent_busy() and agent_name.lower() != "laira":
+        # Double-check: if other agent also claimed, non-primary yields (deterministic tiebreak)
+        if _is_other_agent_busy() and not _is_primary(agent_name):
             logger.debug(f"[{agent_name}] Skipping — other agent also claimed, yielding")
             await _broadcast_idle()
             return
@@ -1241,8 +1245,8 @@ async def entrypoint(ctx: JobContext):
             text = _correct_names(text)
 
             # Echo the transcription to lk.chat with the human's name so it shows in UI
-            # Only the primary agent (Laira) echoes to avoid duplicate chat messages
-            if agent_name.lower() == "laira":
+            # Only the primary agent echoes to avoid duplicate chat messages
+            if _is_primary(agent_name):
                 try:
                     await ctx.room.local_participant.send_text(
                         text, topic="lk.chat",
@@ -1259,7 +1263,7 @@ async def entrypoint(ctx: JobContext):
             await _handle_human_input(text, sender)
 
         # Static greeting — zero LLM calls
-        greeting_delay = {"laira": 1.0, "loki": 4.0}.get(agent_name.lower(), 2.0)
+        greeting_delay = _get_delay(agent_name) + 0.5
         await asyncio.sleep(greeting_delay)
         greeting = _GREETINGS.get(agent_name.lower(), f"Hey, {agent_name} here!")
         logger.info(f"[{agent_name}] Static greeting: {greeting}")

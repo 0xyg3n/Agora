@@ -15,12 +15,6 @@
 
 Agora is an open platform for real-time voice collaboration between humans and AI agents. Agents join voice rooms as participants — they hear you, speak back, and collaborate with each other. Cross-session awareness via the ACP Event Bus means agents know what's happening across all their connected platforms (voice rooms, Telegram, Discord).
 
-## Screenshots
-
-| Pre-join | In-call |
-|----------|---------|
-| ![Pre-join](docs/screenshots/pre-join.png) | ![In-call](docs/screenshots/in-call-overview.png) |
-
 ## What Is Agora?
 
 - **Voice rooms with AI agents**: Humans and agents share a LiveKit room. Agents hear speech, respond via TTS, and collaborate with each other.
@@ -179,20 +173,30 @@ The bus is a lightweight WebSocket pub/sub broker (`agent/acp_bus.py`). Events a
 
 ### Any HTTP Agent (bring your own)
 
-Any agent that exposes an OpenAI-compatible `/v1/chat/completions` endpoint works out of the box:
+Any agent that exposes an OpenAI-compatible `/v1/chat/completions` endpoint works. Add it to `agent/agent_registry.py`:
 
 ```python
-# agent/agent_registry.py
 AgentConfig(
     name="Nova",
-    container="skynet-nova",
-    acp_url="http://172.20.0.5:8642",
+    container="my-nova-container",
+    acp_url="http://127.0.0.1:8080",
     voice="en-US-JennyNeural",
     streaming=True,
+    greeting="Hi, Nova here!",
+    delay=2.0,
 )
 ```
 
-No code changes needed — just config and restart.
+Or configure via environment variables:
+
+```bash
+AGENT_NOVA_URL=http://127.0.0.1:8080
+AGENT_NOVA_VOICE=en-US-JennyNeural
+AGENT_NOVA_GREETING=Hi, Nova here!
+AGENT_NOVA_DELAY=2.0
+```
+
+Then start: `AGENT_NAME=Nova ACP_ENABLED=true python agent.py dev`
 
 ## WireGuard Mesh (Multi-Machine)
 
@@ -204,51 +208,107 @@ See [docs/wireguard-mesh.md](docs/wireguard-mesh.md) for the full architecture.
 
 ### Prerequisites
 
-- Docker with agent containers (`skynet-laira`, `skynet-loki`)
-- Python 3.12+ with venv at `agent/.venv`
-- Node.js 20+ for the frontend
-- LiveKit server
+- Docker (for agent containers)
+- Python 3.10+
+- Node.js 18+
+- A LiveKit server (or use the included docker-compose)
+- At least one agent gateway: Hermes Agent, OpenClaw, or any OpenAI-compatible HTTP endpoint
 
-### 1. Clone and configure
+### 1. Clone
 
 ```bash
 git clone https://github.com/0xyg3n/Agora.git
 cd Agora
-cp .env.example .env
-# Edit .env with your LiveKit keys and agent URLs
 ```
 
-### 2. Start LiveKit
+### 2. Configure your agents
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` with your agent details:
+
+```bash
+# LiveKit
+LIVEKIT_URL=ws://127.0.0.1:7880
+LIVEKIT_API_KEY=your-api-key
+LIVEKIT_API_SECRET=your-api-secret
+
+# Agent 1
+AGENT_LAIRA_URL=http://127.0.0.1:3133      # Your agent's HTTP endpoint
+EDGE_TTS_VOICE_LAIRA=de-DE-SeraphinaMultilingualNeural
+AGENT_LAIRA_GREETING=Hey, I'm here!
+AGENT_LAIRA_DELAY=0.5
+
+# Agent 2
+AGENT_LOKI_URL=http://172.20.0.3:8642
+EDGE_TTS_VOICE_LOKI=en-US-GuyNeural
+AGENT_LOKI_GREETING=Yo, what's up.
+AGENT_LOKI_DELAY=3.5
+
+# ACP Event Bus
+ACP_BUS_HOST=0.0.0.0
+ACP_BUS_PORT=9090
+ACP_STREAMING_AGENTS=laira,loki
+```
+
+Or for a custom agent, add to `agent/agent_registry.py`:
+
+```python
+AgentConfig(
+    name="MyAgent",
+    container="my-agent-container",
+    acp_url="http://127.0.0.1:8080",
+    voice="en-US-AriaNeural",
+    streaming=True,
+    greeting="Hello!",
+    delay=1.0,
+)
+```
+
+### 3. Start LiveKit
 
 ```bash
 cd server && docker compose up -d
 ```
 
-### 3. Start the frontend
+### 4. Install agent dependencies
+
+```bash
+cd agent
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt   # aiohttp, websockets, edge-tts, etc.
+```
+
+### 5. Start the ACP Event Bus
+
+```bash
+python acp_bus.py &
+```
+
+### 6. Start agents
+
+```bash
+AGENT_NAME=Laira ACP_ENABLED=true python agent.py dev &
+AGENT_NAME=Loki  ACP_ENABLED=true python agent.py dev &
+```
+
+Or use the all-in-one script:
+
+```bash
+./scripts/start-multi-agents.sh
+```
+
+### 7. Start the frontend
 
 ```bash
 cd frontend
 npm install && npm run build && npx tsx server.ts
 ```
 
-Frontend runs at `http://127.0.0.1:3210`.
-
-### 4. Start agents + ACP bus
-
-```bash
-./scripts/start-multi-agents.sh
-```
-
-Or manually:
-
-```bash
-cd agent && source .venv/bin/activate
-python acp_bus.py &                                        # Event bus
-AGENT_NAME=Laira ACP_ENABLED=true python agent.py dev &    # Laira
-AGENT_NAME=Loki  ACP_ENABLED=true python agent.py dev &    # Loki
-```
-
-### 5. Open the app
+### 8. Open your browser
 
 ```
 http://127.0.0.1:3210
@@ -257,7 +317,7 @@ http://127.0.0.1:3210
 Remote access via SSH tunnel:
 
 ```bash
-ssh -L 3210:127.0.0.1:3210 -L 7880:127.0.0.1:7880 <host>
+ssh -L 3210:127.0.0.1:3210 -L 7880:127.0.0.1:7880 yourserver
 ```
 
 ## Configuration
