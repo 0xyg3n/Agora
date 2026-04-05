@@ -15,6 +15,19 @@
 
 Agora is an open platform for real-time voice collaboration between humans and AI agents. Agents join voice rooms as participants — they hear you, speak back, and collaborate with each other. Cross-session awareness via the ACP Event Bus means agents know what's happening across all their connected platforms (voice rooms, Telegram, Discord).
 
+## Built & Tested With
+
+| Component | Technology | Notes |
+|-----------|-----------|-------|
+| **Laira** (Hermes Agent) | Claude Opus 4.6 | Frontier reasoning, SSE streaming, native tool system |
+| **Loki** (OpenClaw) | GPT-5.4 Codex | Full agent autonomy, browser access, multi-model routing |
+| **Voice Pipeline** | Silero VAD + faster-whisper + edge-tts | Fully local — no cloud voice APIs |
+| **Media Server** | LiveKit 1.8 | WebRTC, real-time audio/video |
+| **ACP Event Bus** | Custom WebSocket pub/sub | In-memory, <1ms latency, zero dependencies |
+| **Cross-Session** | Native gateway tools | `acp_bus_query` registered in both Hermes and OpenClaw |
+
+> **Model-agnostic by design.** Any agent with an OpenAI-compatible HTTP API works with Agora. Tested with frontier models — Claude Opus 4.6 and GPT-5.4 — for real production performance, not toy demos.
+
 ## Screenshots
 
 <details>
@@ -217,9 +230,57 @@ Then start: `AGENT_NAME=Nova ACP_ENABLED=true python agent.py dev`
 
 ## WireGuard Mesh (Multi-Machine)
 
-Agora can scale across multiple machines using WireGuard as the network layer. The ACP bus listens on the WireGuard interface, and any machine on the mesh can connect agents to it. GPU-heavy workloads run on machines with GPUs while the bus and room stay on the VPS.
+Agora scales from a single host to a distributed multi-machine network using WireGuard. The ACP bus listens on the WireGuard interface — any machine on the mesh can connect agents. Zero protocol changes required.
 
-See [docs/wireguard-mesh.md](docs/wireguard-mesh.md) for the full architecture.
+```mermaid
+graph TB
+    subgraph WG[WireGuard Mesh — 10.0.0.0/24]
+        direction TB
+
+        subgraph A[Machine A — VPS / Seaverse<br/>10.0.0.1]
+            Bus[ACP Event Bus<br/>ws://10.0.0.1:9090]
+            LK[LiveKit Server]
+            FE[Agora Frontend :3210]
+            L1[skynet-laira<br/>Hermes Agent]
+            L2[skynet-loki<br/>OpenClaw Agent]
+        end
+
+        subgraph B[Machine B — Giannis PC + GPU<br/>10.0.0.3]
+            GPU1[GPU TTS / STT<br/>VibeVoice, local Whisper]
+            A3[Additional Agents]
+        end
+
+        subgraph C[Machine C — Cloud GPU<br/>10.0.0.4]
+            GPU2[Heavy Inference<br/>Local LLMs, fine-tuned models]
+            A4[Inference Agents]
+        end
+    end
+
+    L1 --> Bus
+    L2 --> Bus
+    GPU1 -->|ws://10.0.0.1:9090| Bus
+    A3 -->|ws://10.0.0.1:9090| Bus
+    GPU2 -->|ws://10.0.0.1:9090| Bus
+    A4 -->|ws://10.0.0.1:9090| Bus
+
+    A <-->|WireGuard<br/>encrypted| B
+    A <-->|WireGuard<br/>encrypted| C
+    B <-->|WireGuard<br/>encrypted| C
+
+    style WG fill:#0d1117,stroke:#e94560,color:#c9d1d9
+    style A fill:#161b22,stroke:#0f3460,color:#c9d1d9
+    style B fill:#161b22,stroke:#533483,color:#c9d1d9
+    style C fill:#161b22,stroke:#533483,color:#c9d1d9
+    style Bus fill:#e94560,stroke:#fff,color:#fff
+```
+
+**What this enables:**
+- GPU workloads (TTS, STT, local LLMs) on machines with GPUs while the bus stays on the VPS
+- Agents distributed across machines but sharing the same ACP bus for cross-session context
+- Scale by adding machines to the WireGuard mesh — not by upgrading one server
+- All traffic encrypted via WireGuard (Noise protocol, Curve25519)
+
+See [docs/wireguard-mesh.md](docs/wireguard-mesh.md) for implementation details.
 
 ## Quick Start
 
