@@ -1,8 +1,8 @@
-# ACP Gap Analysis — VirtualComms
+# ACP Gap Analysis — Agora
 
 ## Context
 
-The VirtualComms project recently replaced its `docker exec`-based bridge with an ACP (Agent Communication Protocol) layer. Laira connects to the Hermes gateway via streaming SSE on port 3133. Loki connects to an OpenClaw API shim via non-streaming HTTP on 172.20.0.3:8642. A cross-session context sync writes events to `/tmp/virtualcomms-context.jsonl`.
+The Agora project recently replaced its `docker exec`-based bridge with an ACP (Agent Communication Protocol) layer. Laira connects to the Hermes gateway via streaming SSE on port 3133. Loki connects to an OpenClaw API shim via non-streaming HTTP on 172.20.0.3:8642. A cross-session context sync writes events to the ACP Event Bus.
 
 This document catalogs every gap found across security, efficiency, quality, and architecture — with severity, concrete fix, effort, and priority.
 

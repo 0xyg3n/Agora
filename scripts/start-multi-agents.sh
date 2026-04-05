@@ -26,7 +26,7 @@ sleep 1
 # Force-kill any survivors
 pkill -9 -f "python agent.py" 2>/dev/null || true
 # Also kill forkserver children that reference agent paths
-pkill -f "multiprocessing.forkserver.*livekit-collab/agent" 2>/dev/null || true
+pkill -f "multiprocessing.forkserver.*agora/agent\|multiprocessing.forkserver.*livekit-collab/agent" 2>/dev/null || true
 sleep 1
 
 # Clean up stale PID files

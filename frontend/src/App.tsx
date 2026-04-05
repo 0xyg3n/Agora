@@ -12,7 +12,7 @@ const TOKEN_ENDPOINT = import.meta.env.VITE_TOKEN_ENDPOINT || '/api/token';
 
 function App() {
   const [token, setToken] = useState<string>('');
-  const [room, setRoom] = useState<string>('skynet-comms');
+  const [room, setRoom] = useState<string>('agora-comms');
   const [username, setUsername] = useState<string>('');
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -82,7 +82,7 @@ function App() {
             </svg>
           </div>
           <h1 className="call-title">Agora</h1>
-          <p className="call-subtitle">Skynet Comms — AI Voice Collaboration</p>
+          <p className="call-subtitle">AI Voice Collaboration Platform</p>
 
           {/* Agent avatars preview */}
           <div className="call-agents-preview">

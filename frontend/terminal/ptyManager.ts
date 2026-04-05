@@ -55,7 +55,7 @@ export class PtyManager extends EventEmitter {
 
     const sessionId = randomUUID();
     const {
-      name = 'Skynet Terminal',
+      name = 'Agora Terminal',
       workingDir = process.env.TERMINAL_WORKDIR || process.cwd(),
       cols = 100,
       rows = 28,

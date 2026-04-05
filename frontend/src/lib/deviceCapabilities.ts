@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'skynet-3d-preference';
+const STORAGE_KEY = 'agora-3d-preference';
 
 export interface DeviceCapabilities {
   supports3D: boolean;

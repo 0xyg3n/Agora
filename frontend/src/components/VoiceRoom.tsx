@@ -48,7 +48,7 @@ interface AgentStatusResponse {
 
 let toastIdCounter = 0;
 
-const SIDEBAR_WIDTH_STORAGE_KEY = 'skynet.voiceRoom.sidebarWidth';
+const SIDEBAR_WIDTH_STORAGE_KEY = 'agora.voiceRoom.sidebarWidth';
 const DEFAULT_SIDEBAR_WIDTH = 432;
 const MIN_SIDEBAR_WIDTH = 340;
 const MAX_SIDEBAR_WIDTH = 680;

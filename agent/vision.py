@@ -1,4 +1,4 @@
-"""Vision module for Skynet Comms — frame capture + LLM vision API.
+"""Vision module for Agora — frame capture + LLM vision API.
 
 Handles:
   1. Intent detection (is the user asking about what they see?)

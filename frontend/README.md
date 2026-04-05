@@ -1,6 +1,6 @@
 # Frontend
 
-The frontend package contains both the browser UI and the local token and ops server for VirtualComms.
+The frontend package contains both the browser UI and the local token and ops server for Agora.
 
 ## Screenshots
 

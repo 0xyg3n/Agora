@@ -20,8 +20,8 @@ if [ "$count" -gt 0 ]; then
     # Force-kill survivors
     pkill -9 -f "python agent.py" 2>/dev/null || true
     # Kill forkserver children too
-    pkill -f "multiprocessing.forkserver.*livekit-collab/agent" 2>/dev/null || true
-    pkill -9 -f "multiprocessing.forkserver.*livekit-collab/agent" 2>/dev/null || true
+    pkill -f "multiprocessing.forkserver.*agora/agent" 2>/dev/null || true
+    pkill -9 -f "multiprocessing.forkserver.*agora/agent" 2>/dev/null || true
     sleep 1
     echo "Done."
 else

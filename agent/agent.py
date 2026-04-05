@@ -1,4 +1,4 @@
-"""Agora voice agent — real-time voice I/O layer for Skynet Comms.
+"""Agora voice agent — real-time voice I/O for the Agora platform.
 
 Architecture:
   Human speaks (mic) → VAD → STT → user_input_transcribed → ACP bridge → session.say() → TTS
@@ -208,7 +208,7 @@ async def entrypoint(ctx: JobContext):
     )
 
     # Persistent cache for reconnect survival
-    _CONTEXT_CACHE_PATH = f"/srv/project/livekit-collab/agent/.cache/{room_name}-{agent_name.lower()}-context.jsonl"
+    _CONTEXT_CACHE_PATH = f"/tmp/agora-cache/{room_name}-{agent_name.lower()}-context.jsonl"
 
     def _sanitize_name(name: str) -> str:
         """Strip control characters and limit participant name length."""
@@ -782,7 +782,7 @@ async def entrypoint(ctx: JobContext):
         participant_str = ", ".join(participants) if participants else "unknown"
         return (
             f"PLATFORM CONTEXT: You are {agent_name}, currently in the "
-            f"Agora voice room '{room_name}' (Skynet-Comms). "
+            f"Agora voice room '{room_name}'. "
             f"This is a REAL-TIME VOICE conversation — not Telegram, not Discord, "
             f"not WhatsApp. You are speaking through Agora TTS right now. "
             f"Participants in this room: {participant_str}.\n"

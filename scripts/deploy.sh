@@ -3,7 +3,7 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
-echo "=== Skynet Comms — Deploy ==="
+echo "=== Agora — Deploy ==="
 
 # 1. Start LiveKit server
 echo "[1/4] Starting LiveKit server..."

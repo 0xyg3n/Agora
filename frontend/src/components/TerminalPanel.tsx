@@ -4,7 +4,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 
-const DEFAULT_WORKDIR = '/srv/project/livekit-collab';
+const DEFAULT_WORKDIR = '/srv/project/agora';
 
 interface TerminalPanelProps {
   roomName: string;
@@ -60,7 +60,7 @@ export default function TerminalPanel({ roomName }: TerminalPanelProps) {
     terminal.open(containerRef.current);
     fitAddon.fit();
 
-    terminal.writeln('\x1b[1;36mSkynet Terminal\x1b[0m');
+    terminal.writeln('\x1b[1;36mAgora Terminal\x1b[0m');
     terminal.writeln(`\x1b[90mroom: ${roomName}\x1b[0m`);
     terminal.writeln('');
 
@@ -75,7 +75,7 @@ export default function TerminalPanel({ roomName }: TerminalPanelProps) {
       ws.send(JSON.stringify({
         type: 'create_session',
         payload: {
-          name: `Skynet Terminal (${roomName})`,
+          name: `Agora Terminal (${roomName})`,
           workingDir: DEFAULT_WORKDIR,
           cols: terminal.cols,
           rows: terminal.rows,
@@ -182,7 +182,7 @@ export default function TerminalPanel({ roomName }: TerminalPanelProps) {
 
   const handleClear = () => {
     terminalRef.current?.clear();
-    terminalRef.current?.writeln('\x1b[1;36mSkynet Terminal\x1b[0m');
+    terminalRef.current?.writeln('\x1b[1;36mAgora Terminal\x1b[0m');
     terminalRef.current?.writeln(`\x1b[90mroom: ${roomName}\x1b[0m`);
     terminalRef.current?.writeln('');
   };
@@ -201,7 +201,7 @@ export default function TerminalPanel({ roomName }: TerminalPanelProps) {
     wsRef.current.send(JSON.stringify({
       type: 'create_session',
       payload: {
-        name: `Skynet Terminal (${roomName})`,
+        name: `Agora Terminal (${roomName})`,
         workingDir: DEFAULT_WORKDIR,
         cols: terminalRef.current.cols,
         rows: terminalRef.current.rows,
