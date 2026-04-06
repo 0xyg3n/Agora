@@ -249,25 +249,34 @@ async def ask_claude_vision(image_bytes: bytes, user_text: str, agent_name: str)
 
 async def _ask_claude_vision(b64: str, user_text: str, system: str, agent_name: str) -> str:
     client = _get_claude_client()
-    logger.info(f"Vision: calling Claude API (agent={agent_name})")
-    resp = await asyncio.wait_for(
-        client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=150,
-            system=system,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}},
-                    {"type": "text", "text": user_text},
-                ],
-            }],
-        ),
-        timeout=15.0,
-    )
-    text = resp.content[0].text.strip()
-    logger.info(f"Vision: Claude response: {text[:80]}...")
-    return text
+    last_err = None
+    for attempt in range(3):
+        try:
+            logger.info(f"Vision: calling Claude API (agent={agent_name}, attempt={attempt + 1})")
+            resp = await asyncio.wait_for(
+                client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=150,
+                    system=system,
+                    messages=[{
+                        "role": "user",
+                        "content": [
+                            {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}},
+                            {"type": "text", "text": user_text},
+                        ],
+                    }],
+                ),
+                timeout=15.0,
+            )
+            text = resp.content[0].text.strip()
+            logger.info(f"Vision: Claude response: {text[:80]}...")
+            return text
+        except anthropic.RateLimitError as e:
+            last_err = e
+            wait = 2 ** attempt
+            logger.warning(f"Vision: rate limited, retrying in {wait}s (attempt {attempt + 1}/3)")
+            await asyncio.sleep(wait)
+    raise last_err
 
 
 async def _ask_openai_vision(b64: str, user_text: str, system: str, agent_name: str) -> str:
