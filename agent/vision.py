@@ -222,9 +222,12 @@ def _get_openai_client() -> openai.AsyncOpenAI:
 # --- Unified vision entry point ---
 
 _VISION_SYSTEM = (
-    "You are {agent_name} in a voice room. "
-    "Describe what you see in 1-2 sentences, max 30 words. "
-    "No markdown. Speak naturally."
+    "You are {agent_name}, an AI agent in a live voice room with a human. "
+    "You can see them through their webcam right now. "
+    "Answer their question about what you see accurately and specifically. "
+    "Be observant: note details like clothing, gestures, fingers held up, "
+    "objects, expressions, and background. "
+    "Reply in 1-2 natural sentences, max 30 words. No markdown."
 )
 
 

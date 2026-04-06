@@ -10,9 +10,12 @@ from runtime_utils import (  # noqa: E402
     classify_openclaw_result,
     ensure_spoken_response_text,
     is_directly_addressed,
+    is_group_address,
+    is_stop_command,
     is_vision_failure_text,
     mentions_name,
     normalize_context_text,
+    parse_turn_count,
     should_store_context_message,
 )
 
@@ -152,6 +155,56 @@ class RuntimeUtilsTests(unittest.TestCase):
         self.assertIsNone(
             classify_agent_turn_trigger("Laira is handling this one.", "loki"),
         )
+
+
+    # --- Turn-taking tests ---
+
+    def test_parse_turn_count_explicit_turns(self) -> None:
+        self.assertEqual(parse_turn_count("talk for 5 turns"), 5)
+        self.assertEqual(parse_turn_count("chat for 3 rounds"), 3)
+        self.assertEqual(parse_turn_count("discuss for 10 exchanges"), 10)
+
+    def test_parse_turn_count_short_form(self) -> None:
+        self.assertEqual(parse_turn_count("5 turns"), 5)
+        self.assertEqual(parse_turn_count("give me 3 rounds"), 3)
+
+    def test_parse_turn_count_each_doubles(self) -> None:
+        self.assertEqual(parse_turn_count("3 turns each"), 6)
+        self.assertEqual(parse_turn_count("5 rounds each"), 10)
+
+    def test_parse_turn_count_minutes(self) -> None:
+        self.assertEqual(parse_turn_count("discuss for 2 minutes"), 20)
+        self.assertEqual(parse_turn_count("talk for 1 min"), 10)
+
+    def test_parse_turn_count_caps_at_max(self) -> None:
+        self.assertEqual(parse_turn_count("talk for 100 turns"), 20)
+        self.assertEqual(parse_turn_count("50 turns each"), 20)
+
+    def test_parse_turn_count_no_match(self) -> None:
+        self.assertEqual(parse_turn_count("hello laira"), 0)
+        self.assertEqual(parse_turn_count("what do you think?"), 0)
+
+    def test_parse_turn_count_talk_to_each_other(self) -> None:
+        self.assertEqual(parse_turn_count("talk to each other for 5 turns"), 5)
+
+    def test_is_group_address(self) -> None:
+        self.assertTrue(is_group_address("hey guys what do you think"))
+        self.assertTrue(is_group_address("you two discuss this"))
+        self.assertTrue(is_group_address("both of you answer"))
+        self.assertTrue(is_group_address("hey everyone"))
+        self.assertTrue(is_group_address("ok team"))
+        self.assertFalse(is_group_address("hey laira"))
+        self.assertFalse(is_group_address("loki tell me"))
+
+    def test_is_stop_command(self) -> None:
+        self.assertTrue(is_stop_command("stop"))
+        self.assertTrue(is_stop_command("enough"))
+        self.assertTrue(is_stop_command("ok stop talking"))
+        self.assertTrue(is_stop_command("shut up"))
+        self.assertTrue(is_stop_command("that's enough"))
+        self.assertTrue(is_stop_command("quiet"))
+        self.assertFalse(is_stop_command("don't stop believing"))
+        self.assertFalse(is_stop_command("hey laira stop loki from talking"))
 
 
 if __name__ == "__main__":

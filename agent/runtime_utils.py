@@ -172,6 +172,76 @@ def ensure_spoken_response_text(response: str | None, empty_reply_fallback: str)
     return empty_reply_fallback, True
 
 
+# ---------------------------------------------------------------------------
+# Turn-taking: user-controlled multi-turn agent conversations
+# ---------------------------------------------------------------------------
+
+# "talk for 5 turns", "3 turns each", "chat for 10 rounds", "discuss for 2 minutes"
+_TURN_COUNT_RE = re.compile(
+    r"(?:talk|chat|discuss|converse|debate|go)(?:\s+(?:to|with)\s+each\s+other)?"
+    r"\s+(?:for\s+)?(\d+)\s*(?:turns?|rounds?|exchanges?)",
+    re.IGNORECASE,
+)
+# "5 turns", "10 turns each"
+_TURN_COUNT_SHORT_RE = re.compile(
+    r"(\d+)\s*(?:turns?|rounds?|exchanges?)\s*(?:each)?",
+    re.IGNORECASE,
+)
+# "discuss for 2 minutes" → ~10 turns per minute
+_TURN_MINUTES_RE = re.compile(
+    r"(?:talk|chat|discuss|converse|debate|go)\s+(?:for\s+)?(\d+)\s*(?:minutes?|mins?)",
+    re.IGNORECASE,
+)
+
+# Group address: user talking to both agents
+_GROUP_ADDRESS_RE = re.compile(
+    r"\b(?:guys|you\s+two|both\s+of\s+you|everyone|team|you\s+all|y'?all)\b",
+    re.IGNORECASE,
+)
+
+# Stop commands: user wants agents to stop talking
+_STOP_COMMANDS_RE = re.compile(
+    r"^(?:stop|enough|ok\s+stop|okay\s+stop|shut\s+up|be\s+quiet|that'?s\s+enough|"
+    r"stop\s+talking|quiet|silence|hold\s+on|wait|pause)\b",
+    re.IGNORECASE,
+)
+
+_MAX_TURNS = 20  # safety cap
+
+
+def parse_turn_count(text: str) -> int:
+    """Extract a requested turn count from user input.
+
+    Returns 0 if no turn request detected.
+    """
+    # "discuss for 3 minutes" → ~10 turns/min
+    m = _TURN_MINUTES_RE.search(text)
+    if m:
+        return min(int(m.group(1)) * 10, _MAX_TURNS)
+    # "talk for 5 turns"
+    m = _TURN_COUNT_RE.search(text)
+    if m:
+        return min(int(m.group(1)), _MAX_TURNS)
+    # "5 turns each" (multiply by 2 since "each" means per agent)
+    m = _TURN_COUNT_SHORT_RE.search(text)
+    if m:
+        n = int(m.group(1))
+        if "each" in text.lower():
+            n *= 2
+        return min(n, _MAX_TURNS)
+    return 0
+
+
+def is_group_address(text: str) -> bool:
+    """Return True if the user is addressing multiple agents as a group."""
+    return bool(_GROUP_ADDRESS_RE.search(text or ""))
+
+
+def is_stop_command(text: str) -> bool:
+    """Return True if the user wants agents to stop their conversation."""
+    return bool(_STOP_COMMANDS_RE.match((text or "").strip()))
+
+
 def is_vision_failure_text(text: str | None, failure_prefixes: tuple[str, ...]) -> bool:
     """Detect helper-generated vision failure replies that should stay in error state."""
     cleaned = (text or "").strip().lower()

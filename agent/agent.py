@@ -52,9 +52,12 @@ from runtime_utils import (
     classify_openclaw_result,
     ensure_spoken_response_text,
     is_directly_addressed,
+    is_group_address,
+    is_stop_command,
     is_vision_failure_text,
     mentions_name,
     normalize_context_text,
+    parse_turn_count,
     should_store_context_message,
 )
 from vision import is_vision_request, capture_frame, ask_claude_vision
@@ -110,6 +113,9 @@ _NAME_CORRECTIONS = json.loads(os.environ.get("AGENT_NAME_CORRECTIONS", "{}")) o
 
 # Voice relay prefix: primary agent relays voice transcriptions to non-primary agents
 _VOICE_RELAY_RE = re.compile(r'^\[VOICE_RELAY:(.+?)\]\s*(.+)$', re.DOTALL)
+
+# Turn relay prefix: automatic turn-taking between agents
+_TURN_RELAY_RE = re.compile(r'^\[TURN_RELAY:(\d+)/(\d+)\]\s*(.+)$', re.DOTALL)
 
 
 def _correct_names(text: str) -> str:
@@ -335,6 +341,11 @@ async def entrypoint(ctx: JobContext):
     # Dedup: texts already processed from any topic (prevents cross-topic duplicates)
     _processed_texts: dict[str, float] = {}
     _TEXT_DEDUP_WINDOW = 10.0  # seconds
+
+    # Turn-taking state: user-controlled multi-turn agent conversations
+    _turn_total: list[int] = [0]       # total turns requested
+    _turn_remaining: list[int] = [0]   # turns left
+    _turn_initiator: list[str] = [""]  # user who requested turns
 
     # Mutable container for identity
     _identity_ref: list[str] = [""]
@@ -1062,6 +1073,36 @@ async def entrypoint(ctx: JobContext):
         logger.error(f"[{agent_name}] Response pipeline produced empty text")
         return _EMPTY_REPLY_FALLBACK, True, False
 
+    async def _send_turn_relay(response_text: str, turn_num: int, turn_total: int):
+        """Send a turn relay to the other agent via lk.agent.chat."""
+        try:
+            relay = f"[TURN_RELAY:{turn_num}/{turn_total}] {response_text}"
+            await ctx.room.local_participant.send_text(
+                relay, topic="lk.agent.chat",
+                attributes={"lk.chat.sender_name": agent_name},
+            )
+            logger.info(
+                f"[{agent_name}] Turn relay sent ({turn_num}/{turn_total}): "
+                f"{response_text[:50]}"
+            )
+        except Exception:
+            logger.warning(f"[{agent_name}] Failed to send turn relay", exc_info=True)
+
+    async def _respond_and_maybe_relay(text: str, sender: str):
+        """Get a response, speak it, and relay to other agent if turns remain."""
+        await session.interrupt()
+        await _broadcast_thinking()
+        response, preserve_error, already_spoken = await _get_spoken_response(text, sender)
+        await _say_and_echo(response, preserve_error=preserve_error, already_spoken=already_spoken)
+
+        # If turns remain, relay our response to trigger the other agent
+        remaining = _turn_remaining[0]
+        if remaining > 0:
+            _turn_remaining[0] = remaining - 1
+            total = _turn_total[0]
+            turn_num = total - _turn_remaining[0]
+            await _send_turn_relay(response, turn_num, total)
+
     async def _handle_human_input(text: str, sender: str):
         """Process human input through turn-taking → OpenClaw → TTS."""
         # Fix STT misrecognitions of agent names before any name checks
@@ -1082,37 +1123,64 @@ async def entrypoint(ctx: JobContext):
 
         _reset_auto_agent_chain()
 
+        # Stop command: cancel any active turn-taking
+        if is_stop_command(text):
+            if _turn_remaining[0] > 0:
+                _turn_remaining[0] = 0
+                _turn_total[0] = 0
+                logger.info(f"[{agent_name}] Turn-taking stopped by {sender}")
+            await _broadcast_idle()
+            return
+
+        # Check for turn count request ("talk for 5 turns")
+        requested_turns = parse_turn_count(text)
+
+        # Check for group address ("hey guys", "you two", "both of you")
+        group = is_group_address(text)
+
+        # If turns requested, primary starts the conversation
+        if requested_turns > 0:
+            if _is_primary(agent_name):
+                _turn_total[0] = requested_turns
+                _turn_remaining[0] = requested_turns - 1  # we take the first turn
+                _turn_initiator[0] = sender
+                logger.info(
+                    f"[{agent_name}] Starting {requested_turns}-turn conversation "
+                    f"(requested by {sender})"
+                )
+                await _respond_and_maybe_relay(text, sender)
+            else:
+                # Non-primary waits — primary will relay to us
+                logger.debug(f"[{agent_name}] Turn-taking: waiting for primary to start")
+            return
+
         # Skip if human addresses a different agent (not us)
-        if _human_mentions_other(text):
+        if _human_mentions_other(text) and not group:
             logger.debug(f"[{agent_name}] Skipping — human addressed other agent")
             await _broadcast_idle()
             return
 
-        # If human mentions ONLY us (not both agents), respond immediately
-        if _human_mentions_us(text) and not _human_mentions_both(text):
-            await session.interrupt()
-            await _broadcast_thinking()
-            response, preserve_error, already_spoken = await _get_spoken_response(text, sender)
-            await _say_and_echo(response, preserve_error=preserve_error, already_spoken=already_spoken)
+        # If human mentions ONLY us (not both agents, not group), respond immediately
+        if _human_mentions_us(text) and not _human_mentions_both(text) and not group:
+            await _respond_and_maybe_relay(text, sender)
             return
 
-        # Both agents mentioned, or generic message: staggered turn-taking
-        # When both are mentioned, both should respond but sequentially
-        if _human_mentions_both(text):
-            # Both addressed: stagger but both respond (Laira first, then Loki)
-            delay = _get_delay(agent_name)
-            await asyncio.sleep(delay)
-            # Wait for the other agent to finish speaking before we start
-            if _is_other_agent_busy():
-                await _wait_for_other_agent_idle(timeout=15.0)
-                await asyncio.sleep(0.5)
-            await session.interrupt()
-            await _broadcast_thinking()
-            response, preserve_error, already_spoken = await _get_spoken_response(text, sender)
-            await _say_and_echo(response, preserve_error=preserve_error, already_spoken=already_spoken)
+        # Group address or both agents mentioned: both respond sequentially
+        # Default to 4 total turns (2 each) for group address
+        if group or _human_mentions_both(text):
+            if _is_primary(agent_name):
+                total = 4  # 2 turns each
+                _turn_total[0] = total
+                _turn_remaining[0] = total - 1
+                _turn_initiator[0] = sender
+                logger.info(f"[{agent_name}] Group address: starting {total}-turn exchange")
+                await _respond_and_maybe_relay(text, sender)
+            else:
+                # Non-primary waits for relay from primary
+                logger.debug(f"[{agent_name}] Group address: waiting for primary")
             return
 
-        # Generic message (no names): staggered delay, only one responds
+        # Generic message (no names, no group): staggered delay, only one responds
         delay = _get_delay(agent_name)
         await asyncio.sleep(delay)
         if _is_other_agent_busy():
@@ -1124,15 +1192,13 @@ async def entrypoint(ctx: JobContext):
         await _broadcast_thinking()
         # Small grace period for the other agent to see our claim
         await asyncio.sleep(0.5)
-        # Double-check: if other agent also claimed, non-primary yields (deterministic tiebreak)
+        # Double-check: if other agent also claimed, non-primary yields
         if _is_other_agent_busy() and not _is_primary(agent_name):
             logger.debug(f"[{agent_name}] Skipping — other agent also claimed, yielding")
             await _broadcast_idle()
             return
 
-        await session.interrupt()
-        response, preserve_error, already_spoken = await _get_spoken_response(text, sender)
-        await _say_and_echo(response, preserve_error=preserve_error, already_spoken=already_spoken)
+        await _respond_and_maybe_relay(text, sender)
 
     # --- Text input callback (human typed chat only — voice goes through user_input_transcribed) ---
     async def _chat_input_cb(sess: AgentSession, ev):
@@ -1187,6 +1253,47 @@ async def entrypoint(ctx: JobContext):
                     f"(sender: {original_sender})"
                 )
                 await _handle_human_input(actual_text, original_sender)
+            return
+
+        # Check for turn relay: automatic turn-taking between agents.
+        # Format: [TURN_RELAY:turn_num/total] previous agent's response
+        turn_match = _TURN_RELAY_RE.match(text)
+        if turn_match:
+            turn_num = int(turn_match.group(1))
+            turn_total = int(turn_match.group(2))
+            prev_response = turn_match.group(3).strip()
+            remaining = turn_total - turn_num
+            if remaining <= 0 or not prev_response:
+                logger.info(f"[{agent_name}] Turn relay: no turns left, ignoring")
+                return
+
+            # Get the sender agent's display name
+            p = ctx.room.remote_participants.get(sender_identity)
+            from_name = _sanitize_name(
+                p.name or p.attributes.get("agent_name") or sender_identity
+            ) if p else sender_identity
+
+            logger.info(
+                f"[{agent_name}] Turn relay ({turn_num}/{turn_total}): "
+                f"responding to {from_name}"
+            )
+
+            # Update our turn state so _respond_and_maybe_relay continues the chain
+            _turn_total[0] = turn_total
+            _turn_remaining[0] = remaining - 1  # we'll use one turn now
+            sender = _turn_initiator[0] or _get_human_name()
+
+            # Build context from previous agent's response
+            prompt = (
+                f"[{from_name} just said]: {prev_response}\n\n"
+                f"Continue the conversation naturally. "
+                f"Respond to what {from_name} said. "
+                f"Turn {turn_num + 1} of {turn_total}."
+            )
+
+            await _wait_for_other_agent_idle(timeout=15.0)
+            await asyncio.sleep(0.5)
+            await _respond_and_maybe_relay(prompt, sender)
             return
 
         # Dedup: skip if we already processed this exact text recently
