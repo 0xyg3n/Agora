@@ -24,7 +24,7 @@ import {
 import './VoiceRoom.css';
 
 const AgentModel3D = lazy(() => import('./AgentModel3D'));
-const OpenClawEventsPanel = lazy(() => import('./OpenClawEventsPanel'));
+// OpenClawEventsPanel removed — sidebar is chat-only
 
 interface VoiceRoomProps {
   onLeave: () => void;
@@ -135,7 +135,7 @@ export function VoiceRoom({ onLeave, roomName }: VoiceRoomProps) {
   const [dispatchingAgents, setDispatchingAgents] = useState<Set<string>>(new Set());
   const [agentTelemetry, setAgentTelemetry] = useState<Record<string, AgentTelemetry>>({});
   const [telemetryNow, setTelemetryNow] = useState<number>(() => Date.now());
-  const [sidebarTab, setSidebarTab] = useState<'chat' | 'openclaw'>('chat');
+  const sidebarTab = 'chat';
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     if (typeof window === 'undefined') return DEFAULT_SIDEBAR_WIDTH;
     const raw = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
@@ -843,17 +843,10 @@ export function VoiceRoom({ onLeave, roomName }: VoiceRoomProps) {
           </div>
           <div className="vr-sidebar-tabs">
             <button
-              className={`vr-sidebar-tab ${sidebarTab === 'chat' ? 'active' : ''}`}
-              onClick={() => setSidebarTab('chat')}
+              className="vr-sidebar-tab active"
             >
               Chat
               <span className="vr-sidebar-tab-meta">{visibleMessages.length}</span>
-            </button>
-            <button
-              className={`vr-sidebar-tab ${sidebarTab === 'openclaw' ? 'active' : ''}`}
-              onClick={() => setSidebarTab('openclaw')}
-            >
-              OpenClaw
             </button>
           </div>
 
@@ -920,11 +913,6 @@ export function VoiceRoom({ onLeave, roomName }: VoiceRoomProps) {
             </>
           )}
 
-          {sidebarTab === 'openclaw' && (
-            <Suspense fallback={<div className="vr-sidebar-loading">Loading OpenClaw feed...</div>}>
-              <OpenClawEventsPanel roomName={roomName} />
-            </Suspense>
-          )}
 
         </aside>
       </div>

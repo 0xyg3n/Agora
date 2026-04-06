@@ -61,7 +61,7 @@ def _find_human_participant(room: rtc.Room) -> rtc.RemoteParticipant | None:
 
 
 def _encode_frame_jpeg(frame) -> bytes:
-    """Encode a VideoFrame to JPEG bytes (max 512×512)."""
+    """Encode a VideoFrame to JPEG bytes (max 1024×1024, quality 90)."""
     # Try livekit's built-in encoder first (handles format conversion natively)
     try:
         from livekit.agents.utils.images import encode, EncodeOptions, ResizeOptions
@@ -71,7 +71,7 @@ def _encode_frame_jpeg(frame) -> bytes:
             EncodeOptions(
                 format="JPEG",
                 resize_options=ResizeOptions(
-                    width=512, height=512, strategy="scale_aspect_fit"
+                    width=1024, height=1024, strategy="scale_aspect_fit"
                 ),
             ),
         )
@@ -81,9 +81,9 @@ def _encode_frame_jpeg(frame) -> bytes:
     # Fallback: assume RGBA raw data → Pillow
     img = Image.frombytes("RGBA", (frame.width, frame.height), bytes(frame.data))
     img = img.convert("RGB")
-    img.thumbnail((512, 512), Image.LANCZOS)
+    img.thumbnail((1024, 1024), Image.LANCZOS)
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=75)
+    img.save(buf, format="JPEG", quality=90)
     return buf.getvalue()
 
 
@@ -229,9 +229,10 @@ def _get_openai_client() -> openai.AsyncOpenAI:
 _VISION_SYSTEM = (
     "You are {agent_name}, an AI agent in a live voice room with a human. "
     "You can see them through their webcam right now. "
-    "Answer their question about what you see accurately and specifically. "
-    "Be observant: note details like clothing, gestures, fingers held up, "
-    "objects, expressions, and background. "
+    "ONLY describe what you can clearly see in the image. "
+    "If something is unclear, dark, or hard to make out, say so. "
+    "Do NOT guess or invent details. Do NOT describe things you cannot see. "
+    "Be specific about what IS visible: colors, objects, gestures, text on items. "
     "Reply in 1-2 natural sentences, max 30 words. No markdown."
 )
 
