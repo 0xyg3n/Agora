@@ -72,12 +72,10 @@ function summarizeText(value: string, limit: number): string {
   return `${normalized.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
 }
 
-function getChatSenderTone(senderName: string): 'agent-1' | 'agent-2' | 'human' | '' {
+function getChatSenderTone(senderName: string): 'laira' | 'loki' | 'human' | '' {
   const normalized = senderName.trim().toLowerCase();
-  // Color agents by position, humans get a distinct tone
-  if (normalized.includes('laira')) return 'agent-1';
-  if (normalized.includes('loki')) return 'agent-2';
-  // Any non-agent participant gets the human tone
+  if (normalized.includes('laira')) return 'laira';
+  if (normalized.includes('loki')) return 'loki';
   if (normalized) return 'human';
   return '';
 }
