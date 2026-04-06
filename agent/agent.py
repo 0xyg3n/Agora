@@ -108,6 +108,10 @@ _NAME_CORRECTIONS = json.loads(os.environ.get("AGENT_NAME_CORRECTIONS", "{}")) o
 }
 
 
+# Voice relay prefix: primary agent relays voice transcriptions to non-primary agents
+_VOICE_RELAY_RE = re.compile(r'^\[VOICE_RELAY:(.+?)\]\s*(.+)$', re.DOTALL)
+
+
 def _correct_names(text: str) -> str:
     """Fix common STT misrecognitions of agent names."""
     words = text.split()
@@ -493,20 +497,32 @@ async def entrypoint(ctx: JobContext):
         _tts_queue: asyncio.Queue[str | None] = asyncio.Queue()
 
         async def _tts_worker() -> None:
-            """Background worker: consume sentences from queue and speak them."""
-            while True:
-                text = await _tts_queue.get()
-                if text is None:
-                    break
-                try:
-                    await _set_agent_meta(
-                        activity="speaking",
-                        status="Speaking (streaming)",
-                        touch=True,
-                    )
-                    await session.say(text)
-                except Exception:
-                    logger.warning(f"[{agent_name}] TTS worker error", exc_info=True)
+            """Background worker: consume sentences from queue and speak them.
+
+            Acquires the speaking turn once on the first sentence and holds it
+            until all sentences are done (or the queue signals None).
+            """
+            _turn_held = False
+            try:
+                while True:
+                    text = await _tts_queue.get()
+                    if text is None:
+                        break
+                    try:
+                        if not _turn_held:
+                            await _acquire_speaking_turn()
+                            _turn_held = True
+                        await _set_agent_meta(
+                            activity="speaking",
+                            status="Speaking (streaming)",
+                            touch=True,
+                        )
+                        await session.say(text)
+                    except Exception:
+                        logger.warning(f"[{agent_name}] TTS worker error", exc_info=True)
+            finally:
+                if _turn_held:
+                    await _release_speaking_turn()
 
         _tts_task = asyncio.create_task(_tts_worker())
 
@@ -885,6 +901,51 @@ async def entrypoint(ctx: JobContext):
             await asyncio.sleep(0.3)
             waited += 0.3
 
+    async def _acquire_speaking_turn(timeout: float = 20.0) -> bool:
+        """Wait until no other agent is speaking, then claim the turn.
+
+        Primary agent wins ties. Returns True when turn is acquired.
+        """
+        waited = 0.0
+        while waited < timeout:
+            other_speaking = False
+            for p in ctx.room.remote_participants.values():
+                if (p.kind == rtc.ParticipantKind.PARTICIPANT_KIND_AGENT
+                        and p.identity != _identity_ref[0]):
+                    if p.attributes.get("agent_state", "idle") == "speaking":
+                        other_speaking = True
+                        break
+            if not other_speaking:
+                await _set_agent_meta(state="speaking", touch=True)
+                await asyncio.sleep(0.15)
+                # Verify no simultaneous claim
+                conflict = False
+                for p in ctx.room.remote_participants.values():
+                    if (p.kind == rtc.ParticipantKind.PARTICIPANT_KIND_AGENT
+                            and p.identity != _identity_ref[0]):
+                        if p.attributes.get("agent_state", "idle") == "speaking":
+                            if not _is_primary(agent_name):
+                                conflict = True
+                            break
+                if not conflict:
+                    return True
+                await _set_agent_meta(state="waiting", touch=True)
+            await asyncio.sleep(0.3)
+            waited += 0.45
+        # Timeout: speak anyway to avoid deadlock
+        await _set_agent_meta(state="speaking", touch=True)
+        return True
+
+    async def _release_speaking_turn():
+        """Release the speaking turn so other agents can speak."""
+        await _set_agent_meta(
+            state="idle",
+            activity="idle",
+            status="Awaiting next input",
+            claimed_at=None,
+            touch=True,
+        )
+
     async def _say_and_echo(text: str, *, preserve_error: bool = False, already_spoken: bool = False):
         """Speak text via TTS and echo to chat channels.
 
@@ -892,14 +953,18 @@ async def entrypoint(ctx: JobContext):
         progressively), skip the TTS call and only echo to chat.
         """
         if not already_spoken:
-            await _set_agent_meta(
-                activity="speaking",
-                status="Speaking response",
-                touch=True,
-            )
-            clean = _sanitize_for_tts(text)
-            if clean:
-                await session.say(clean)
+            await _acquire_speaking_turn()
+            try:
+                await _set_agent_meta(
+                    activity="speaking",
+                    status="Speaking response",
+                    touch=True,
+                )
+                clean = _sanitize_for_tts(text)
+                if clean:
+                    await session.say(clean)
+            finally:
+                await _release_speaking_turn()
         await _send_chat_echo(text)
         await _set_agent_meta(
             state="idle",
@@ -1109,6 +1174,21 @@ async def entrypoint(ctx: JobContext):
         if not text or len(text) < 2:
             return
 
+        # Check for voice relay from the primary agent.
+        # Format: [VOICE_RELAY:sender_name] actual text
+        # Non-primary agents process this as human voice input.
+        relay_match = _VOICE_RELAY_RE.match(text)
+        if relay_match and not _is_primary(agent_name):
+            original_sender = relay_match.group(1)
+            actual_text = relay_match.group(2).strip()
+            if actual_text:
+                logger.info(
+                    f"[{agent_name}] Voice relay: '{actual_text[:60]}' "
+                    f"(sender: {original_sender})"
+                )
+                await _handle_human_input(actual_text, original_sender)
+            return
+
         # Dedup: skip if we already processed this exact text recently
         # (covers same message arriving via both lk.chat and lk.agent.chat)
         dedup_key = f"{sender_identity}:{text.lower().strip()}"
@@ -1213,6 +1293,32 @@ async def entrypoint(ctx: JobContext):
             ),
         )
 
+        # --- Audio track filtering (BUG 1 + BUG 3) ---
+        # Primary agent: unsubscribe from AGENT audio tracks (prevent TTS→STT loop)
+        # Non-primary agent: unsubscribe from ALL audio (voice arrives via relay)
+        _primary_flag = _is_primary(agent_name)
+
+        def _should_unsub_audio(participant: rtc.RemoteParticipant) -> bool:
+            if not _primary_flag:
+                return True  # Non-primary: no audio at all
+            return participant.kind == rtc.ParticipantKind.PARTICIPANT_KIND_AGENT
+
+        for _rp in ctx.room.remote_participants.values():
+            if _should_unsub_audio(_rp):
+                for _pub in _rp.track_publications.values():
+                    if _pub.kind == rtc.TrackKind.KIND_AUDIO:
+                        _pub.set_subscribed(False)
+                        logger.debug(f"[{agent_name}] Unsubscribed audio: {_rp.identity}")
+
+        @ctx.room.on("track_published")
+        def _on_track_published(
+            publication: rtc.RemoteTrackPublication,
+            participant: rtc.RemoteParticipant,
+        ):
+            if publication.kind == rtc.TrackKind.KIND_AUDIO and _should_unsub_audio(participant):
+                publication.set_subscribed(False)
+                logger.debug(f"[{agent_name}] Unsubscribed new audio: {participant.identity}")
+
         # Set identity and attributes
         my_identity = ctx.room.local_participant.identity
         _identity_ref[0] = my_identity
@@ -1299,23 +1405,41 @@ async def entrypoint(ctx: JobContext):
             asyncio.create_task(_process_voice_input(corrected, sender))
 
         async def _process_voice_input(text: str, sender: str):
-            """Echo voice transcription to chat (so it's visible) and process it."""
+            """Echo voice transcription to chat (so it's visible) and process it.
+
+            Only the primary agent runs STT and handles voice directly.
+            Non-primary agents receive voice via relay on lk.agent.chat.
+            """
             # text is already name-corrected by _on_user_input_transcribed
 
-            # Echo the transcription to lk.chat with the human's name so it shows in UI
-            # Only the primary agent echoes to avoid duplicate chat messages
-            if _is_primary(agent_name):
-                try:
-                    await ctx.room.local_participant.send_text(
-                        text, topic="lk.chat",
-                        attributes={
-                            "lk.chat.sender_name": sender,
-                            "transcription": "true",
-                        },
-                    )
-                    logger.info(f"[{agent_name}] Echoed voice transcription to chat: '{text}' as {sender}")
-                except Exception:
-                    logger.warning(f"[{agent_name}] Failed to echo voice transcription to chat", exc_info=True)
+            # Non-primary agents should never reach here (audio unsubscribed),
+            # but guard anyway.
+            if not _is_primary(agent_name):
+                return
+
+            # Echo the transcription to lk.chat so it shows in the UI
+            try:
+                await ctx.room.local_participant.send_text(
+                    text, topic="lk.chat",
+                    attributes={
+                        "lk.chat.sender_name": sender,
+                        "transcription": "true",
+                    },
+                )
+                logger.info(f"[{agent_name}] Echoed voice transcription to chat: '{text}' as {sender}")
+            except Exception:
+                logger.warning(f"[{agent_name}] Failed to echo voice transcription to chat", exc_info=True)
+
+            # Relay voice transcription to non-primary agents via agent chat
+            try:
+                relay_msg = f"[VOICE_RELAY:{sender}] {text}"
+                await ctx.room.local_participant.send_text(
+                    relay_msg, topic="lk.agent.chat",
+                    attributes={"lk.chat.sender_name": agent_name},
+                )
+                logger.debug(f"[{agent_name}] Relayed voice to agent chat: {text[:60]}")
+            except Exception:
+                logger.warning(f"[{agent_name}] Failed to relay voice to agent chat", exc_info=True)
 
             # Process through the standard human input handler
             await _handle_human_input(text, sender)
