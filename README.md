@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/0xyg3n/Agora/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-brightgreen" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/tests-83%20passing-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-92%20passing-brightgreen" alt="Tests">
   <img src="https://img.shields.io/badge/voice%20pipeline-zero%20cost-ff6b6b" alt="Zero Voice API Costs">
   <img src="https://img.shields.io/badge/python-3.10+-3776ab?logo=python&logoColor=white" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/TypeScript-React%2019-3178c6?logo=typescript&logoColor=white" alt="TypeScript">
@@ -66,6 +66,7 @@ Agora is an open platform for real-time voice collaboration between humans and A
   - [Hermes Agent](#hermes-agent-native-support)
   - [OpenClaw](#openclaw-supported-via-api-shim)
   - [Bring Your Own Agent](#any-openai-compatible-agent)
+- [Vision and Camera](#vision-and-camera)
 - [Deployment Models](#deployment-models)
 - [Scaling with WireGuard](#scaling-with-wireguard)
 - [Getting Started](#getting-started)
@@ -293,6 +294,40 @@ Start with: `AGENT_NAME=Nova ACP_ENABLED=true python agent.py dev`
 
 ---
 
+## Vision and Camera
+
+Agents can see what you see. Enable your webcam or share your screen, and ask naturally:
+
+- "Can you see me?"
+- "What do you see?"
+- "Look at my screen"
+- "How many fingers am I holding up?"
+- "What am I wearing?"
+
+**How it works:** On each vision request, the agent captures a single frame from your camera or screen share via [LiveKit](https://livekit.io), encodes it as a 1024x1024 JPEG, and sends it directly to the [Anthropic Claude Vision API](https://docs.anthropic.com/en/docs/build-with-claude/vision). The response is spoken back naturally via TTS. Vision bypasses the agent gateway entirely for minimal latency.
+
+Both agents can use vision. The camera is tried first; if unavailable, the agent falls back to screen share.
+
+```
+User enables camera/screenshare
+   --> LiveKit video track
+       --> Agent detects vision intent ("can you see me?")
+           --> Captures single JPEG frame (1024x1024)
+               --> Claude Vision API (direct, bypasses gateway)
+                   --> Agent speaks description via TTS
+```
+
+**Configuration:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ANTHROPIC_OAUTH_TOKEN` | | OAuth token for vision API (`sk-ant-oat...` from Claude subscription) |
+| `ANTHROPIC_VISION_MODEL` | `claude-sonnet-4-6` | Model for vision requests (`claude-opus-4-6` for best quality) |
+
+Vision is not continuous video. Each request captures one frame, describes it, and returns to normal voice mode.
+
+---
+
 ## Deployment Models
 
 | Model | Description | Example |
@@ -513,6 +548,8 @@ ssh -L 3210:127.0.0.1:3210 -L 7880:127.0.0.1:7880 yourserver
 | `EDGE_TTS_VOICE_<NAME>` | per agent | [edge-tts](https://pypi.org/project/edge-tts/) voice for a specific agent |
 | `WHISPER_MODEL` | `small` | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) model size |
 | `LLM_BACKEND` | `anthropic` | LLM backend: `anthropic`, `openai`, or `ollama` |
+| `ANTHROPIC_OAUTH_TOKEN` | | OAuth token for vision (`sk-ant-oat...`) |
+| `ANTHROPIC_VISION_MODEL` | `claude-sonnet-4-6` | Model for vision requests |
 
 ---
 
@@ -532,7 +569,7 @@ agora/
 │   ├── whisper_stt_plugin.py # Speech-to-text plugin
 │   ├── vision.py             # Vision and camera module
 │   ├── runtime_utils.py      # Helper utilities
-│   └── tests/                # Test suite (83 tests)
+│   └── tests/                # Test suite (92 tests)
 ├── frontend/
 │   ├── server.ts             # Token server and operations API
 │   └── src/                  # React user interface
