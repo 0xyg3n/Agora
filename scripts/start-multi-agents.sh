@@ -45,9 +45,8 @@ fi
 
 echo "All clear — no stale agents running."
 
-# Kill any existing ACP bus + injector
+# Kill any existing ACP bus
 pkill -f "python acp_bus.py" 2>/dev/null || true
-pkill -f "python acp_bus_injector.py" 2>/dev/null || true
 sleep 0.5
 
 mkdir -p "$LOG_DIR"
@@ -60,11 +59,6 @@ nohup python acp_bus.py > "$LOG_DIR/acp-bus.log" 2>&1 &
 ACP_BUS_PID=$!
 echo "  ACP Bus PID: $ACP_BUS_PID — log: $LOG_DIR/acp-bus.log"
 sleep 1
-
-# Start ACP Bus → Gateway context injector
-echo "Starting ACP Bus injector..."
-nohup python acp_bus_injector.py > "$LOG_DIR/acp-injector.log" 2>&1 &
-echo "  Injector PID: $! — log: $LOG_DIR/acp-injector.log"
 
 start_agent() {
     local name="$1"
