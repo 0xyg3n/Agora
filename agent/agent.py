@@ -48,7 +48,6 @@ if _ACP_ENABLED:
 from acp_bus_client import AcpBusClient
 from runtime_utils import (
     build_room_context,
-    classify_agent_turn_trigger,
     classify_openclaw_result,
     ensure_spoken_response_text,
     is_directly_addressed,
@@ -360,11 +359,6 @@ async def entrypoint(ctx: JobContext):
     _turn_remaining: list[int] = [0]   # turns left
     _turn_initiator: list[str] = [""]  # user who requested turns
 
-    # Echo demon fix: track when we last responded to ANY input.
-    # Agent-chat mention triggers are suppressed if we responded recently,
-    # preventing the cycle: human→agent→echo→mention→duplicate response.
-    _last_response_time: list[float] = [0.0]
-    _RESPONSE_DEDUP_WINDOW = 10.0  # seconds
 
     # Mutable container for identity
     _identity_ref: list[str] = [""]
@@ -883,29 +877,6 @@ async def entrypoint(ctx: JobContext):
             f"The ACP Event Bus connects all your sessions across platforms."
         )
 
-    # Cascade breaker: track when we last replied to an agent message
-    _last_agent_reply_time: list[float] = [0.0]
-    _AGENT_REPLY_COOLDOWN = 2.5  # seconds — allow short exchanges without rapid double-fire
-    _AUTO_AGENT_CHAIN_TURNS: list[int] = [0]
-    _AUTO_AGENT_CHAIN_LAST_TS: list[float] = [0.0]
-    _AUTO_AGENT_CHAIN_LIMIT = 4
-    _AUTO_AGENT_CHAIN_WINDOW = 35.0
-
-    def _reset_auto_agent_chain() -> None:
-        _AUTO_AGENT_CHAIN_TURNS[0] = 0
-        _AUTO_AGENT_CHAIN_LAST_TS[0] = 0.0
-
-    def _can_continue_auto_agent_chain(now: float) -> bool:
-        last_ts = _AUTO_AGENT_CHAIN_LAST_TS[0]
-        if not last_ts or now - last_ts > _AUTO_AGENT_CHAIN_WINDOW:
-            _reset_auto_agent_chain()
-        return _AUTO_AGENT_CHAIN_TURNS[0] < _AUTO_AGENT_CHAIN_LIMIT
-
-    def _record_auto_agent_chain_turn(now: float) -> None:
-        if not _AUTO_AGENT_CHAIN_LAST_TS[0] or now - _AUTO_AGENT_CHAIN_LAST_TS[0] > _AUTO_AGENT_CHAIN_WINDOW:
-            _AUTO_AGENT_CHAIN_TURNS[0] = 0
-        _AUTO_AGENT_CHAIN_LAST_TS[0] = now
-        _AUTO_AGENT_CHAIN_TURNS[0] += 1
 
     def _is_other_agent_busy() -> bool:
         mid = _identity_ref[0]
@@ -1006,7 +977,12 @@ async def entrypoint(ctx: JobContext):
         )
 
     async def _send_chat_echo(text: str):
-        """Echo a response to human chat and agent chat channels."""
+        """Echo a response to the UI chat (lk.chat only).
+
+        Agent-to-agent communication uses explicit relay messages
+        (VOICE_RELAY, TURN_RELAY) on lk.agent.chat, not plain echoes.
+        Context sharing uses _store_context_message + ACP Event Bus.
+        """
         now = time.monotonic()
         last_sent = _recently_sent.get(text)
         if last_sent and now - last_sent < 10.0:
@@ -1022,10 +998,6 @@ async def entrypoint(ctx: JobContext):
         try:
             await ctx.room.local_participant.send_text(
                 text, topic="lk.chat",
-                attributes={"lk.chat.sender_name": agent_name},
-            )
-            await ctx.room.local_participant.send_text(
-                text, topic="lk.agent.chat",
                 attributes={"lk.chat.sender_name": agent_name},
             )
             logger.debug(f"[{agent_name}] Sent chat: {text[:80]}...")
@@ -1113,7 +1085,6 @@ async def entrypoint(ctx: JobContext):
         await _broadcast_thinking()
         response, preserve_error, already_spoken = await _get_spoken_response(text, sender)
         await _say_and_echo(response, preserve_error=preserve_error, already_spoken=already_spoken)
-        _last_response_time[0] = time.monotonic()
 
         # If turns remain, relay our response to trigger the other agent
         remaining = _turn_remaining[0]
@@ -1140,8 +1111,6 @@ async def entrypoint(ctx: JobContext):
         # Prune old dedup entries
         for k in [k for k, v in _processed_texts.items() if now - v > _TEXT_DEDUP_WINDOW * 3]:
             del _processed_texts[k]
-
-        _reset_auto_agent_chain()
 
         # Stop command: cancel any active turn-taking
         if is_stop_command(text):
@@ -1316,66 +1285,17 @@ async def entrypoint(ctx: JobContext):
             await _respond_and_maybe_relay(prompt, sender)
             return
 
-        # Dedup: skip if we already processed this exact text recently
-        # (covers same message arriving via both lk.chat and lk.agent.chat)
-        dedup_key = f"{sender_identity}:{text.lower().strip()}"
-        now = time.monotonic()
-        prev_ts = _processed_texts.get(dedup_key)
-        if prev_ts and now - prev_ts < _TEXT_DEDUP_WINDOW:
-            logger.debug(f"[{agent_name}] Skipping duplicate agent chat: {text[:40]}")
-            return
-        _processed_texts[dedup_key] = now
-        # Prune old entries
-        for k in [k for k, v in _processed_texts.items() if now - v > _TEXT_DEDUP_WINDOW * 3]:
-            del _processed_texts[k]
-
+        # Non-relay agent message: store for context only (no response triggered).
+        # Agent-to-agent conversation uses TURN_RELAY, not mention cascades.
         sender_name = sender_identity
         p = ctx.room.remote_participants.get(sender_identity)
         if p:
             sender_name = _sanitize_name(p.name or p.attributes.get("agent_name") or p.identity)
-
-        # Skip human messages (handled by text_input_cb)
         if p and p.kind == rtc.ParticipantKind.PARTICIPANT_KIND_STANDARD:
             return
 
-        logger.info(f"[{agent_name}] Agent chat from {sender_name}: {text[:80]}")
-
-        # Store for context (always, even if we don't reply) — append-only with dedup
+        logger.debug(f"[{agent_name}] Agent chat from {sender_name}: noted for context")
         _store_context_message(sender_name, text)
-
-        trigger = classify_agent_turn_trigger(text, agent_name)
-        if not trigger:
-            logger.debug(f"[{agent_name}] Agent text from {sender_name}: noted (no trigger)")
-            return
-
-        now = time.monotonic()
-
-        # Echo demon fix: if we responded to ANY input recently (human or agent),
-        # suppress mention-triggered responses. This prevents the cycle:
-        # human speaks → we respond → our echo triggers other agent → they respond
-        # mentioning us → we respond AGAIN.
-        if now - _last_response_time[0] < _RESPONSE_DEDUP_WINDOW:
-            logger.debug(
-                f"[{agent_name}] Agent mention suppressed — responded "
-                f"{now - _last_response_time[0]:.1f}s ago"
-            )
-            return
-
-        if not _can_continue_auto_agent_chain(now):
-            logger.debug(f"[{agent_name}] Agent reply suppressed (chain limit reached)")
-            return
-
-        # Cascade breaker: don't reply to agents more than once per cooldown window
-        if now - _last_agent_reply_time[0] < _AGENT_REPLY_COOLDOWN:
-            logger.debug(f"[{agent_name}] Agent reply suppressed (cascade cooldown)")
-            return
-        _last_agent_reply_time[0] = now
-
-        logger.info(f"[{agent_name}] Triggered by {sender_name} via {trigger} mention, will respond")
-        await _wait_for_other_agent_idle(timeout=10.0)
-        await asyncio.sleep(0.6)
-        await _respond_and_maybe_relay(text, sender_name)
-        _record_auto_agent_chain_turn(time.monotonic())
 
     def _handle_agent_chat(reader: rtc.TextStreamReader, sender_identity: str):
         asyncio.create_task(_handle_agent_chat_async(reader, sender_identity))
