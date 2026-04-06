@@ -148,8 +148,13 @@ async def capture_frame(room: rtc.Room, source: str = "camera") -> bytes | None:
 _AGENT_PROVIDERS = {"laira": "claude", "loki": "claude"}
 
 # --- Claude client (Laira) ---
-_OAUTH_BETA = "claude-code-20250219,oauth-2025-04-20"
-_OAUTH_UA = "claude-cli/2.1.2 (external, cli)"
+_OAUTH_BETA = (
+    "interleaved-thinking-2025-05-14,"
+    "fine-grained-tool-streaming-2025-05-14,"
+    "claude-code-20250219,"
+    "oauth-2025-04-20"
+)
+_OAUTH_UA = "claude-cli/2.1.92 (external, cli)"
 _claude_client: anthropic.AsyncAnthropic | None = None
 
 
@@ -250,36 +255,56 @@ async def ask_claude_vision(image_bytes: bytes, user_text: str, agent_name: str)
         return "Sorry, I had trouble seeing that. Could you try again?"
 
 
+_VISION_MODEL = os.environ.get("ANTHROPIC_VISION_MODEL", "claude-sonnet-4-6")
+_VISION_FALLBACK_MODEL = "claude-haiku-4-5-20251001"
+
+
+async def _call_vision_model(client, model: str, b64: str, user_text: str, system: str) -> str:
+    """Single vision API call to a specific model."""
+    resp = await asyncio.wait_for(
+        client.messages.create(
+            model=model,
+            max_tokens=150,
+            system=system,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}},
+                    {"type": "text", "text": user_text},
+                ],
+            }],
+        ),
+        timeout=15.0,
+    )
+    return resp.content[0].text.strip()
+
+
 async def _ask_claude_vision(b64: str, user_text: str, system: str, agent_name: str) -> str:
     client = _get_claude_client()
-    last_err = None
-    for attempt in range(3):
+
+    # Try primary model first
+    try:
+        logger.info(f"Vision: calling Claude API (model={_VISION_MODEL}, agent={agent_name})")
+        text = await _call_vision_model(client, _VISION_MODEL, b64, user_text, system)
+        logger.info(f"Vision: Claude response: {text[:80]}...")
+        return text
+    except anthropic.RateLimitError:
+        logger.warning(f"Vision: {_VISION_MODEL} rate limited")
+
+    # Fallback to Haiku if primary is rate limited
+    if _VISION_MODEL != _VISION_FALLBACK_MODEL:
         try:
-            logger.info(f"Vision: calling Claude API (agent={agent_name}, attempt={attempt + 1})")
-            resp = await asyncio.wait_for(
-                client.messages.create(
-                    model="claude-haiku-4-5-20251001",
-                    max_tokens=150,
-                    system=system,
-                    messages=[{
-                        "role": "user",
-                        "content": [
-                            {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}},
-                            {"type": "text", "text": user_text},
-                        ],
-                    }],
-                ),
-                timeout=15.0,
-            )
-            text = resp.content[0].text.strip()
-            logger.info(f"Vision: Claude response: {text[:80]}...")
+            logger.info(f"Vision: falling back to {_VISION_FALLBACK_MODEL}")
+            text = await _call_vision_model(client, _VISION_FALLBACK_MODEL, b64, user_text, system)
+            logger.info(f"Vision: fallback response: {text[:80]}...")
             return text
-        except anthropic.RateLimitError as e:
-            last_err = e
-            wait = 2 ** attempt
-            logger.warning(f"Vision: rate limited, retrying in {wait}s (attempt {attempt + 1}/3)")
-            await asyncio.sleep(wait)
-    raise last_err
+        except anthropic.RateLimitError:
+            logger.error(f"Vision: fallback model also rate limited")
+
+    raise anthropic.RateLimitError(
+        message="All vision models rate limited",
+        response=None, body=None,
+    )
 
 
 async def _ask_openai_vision(b64: str, user_text: str, system: str, agent_name: str) -> str:
