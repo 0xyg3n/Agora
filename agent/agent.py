@@ -239,9 +239,16 @@ async def entrypoint(ctx: JobContext):
     _MARKDOWN_HEADER_RE = re.compile(r'^#{1,6}\s+', re.MULTILINE)
     _MARKDOWN_BOLD_RE = re.compile(r'\*\*([^*]+)\*\*')
     _MARKDOWN_LIST_RE = re.compile(r'^\s*[-*]\s+', re.MULTILINE)
+    # Tool/API output patterns
+    _TOOL_CALL_RE = re.compile(r'\[?tool_(?:call|result|use)[:\s].*', re.IGNORECASE)
+    _API_RESPONSE_RE = re.compile(r'"(?:status|error|message|result|data|ok)":\s*["{[\d].*')
+    _PIPE_CMD_RE = re.compile(r'\b(?:grep|awk|sed|cat|echo|pip|npm|docker|git|python|bash|sh|wget)\b\s+\S.*', re.IGNORECASE)
+    _HTTP_METHOD_RE = re.compile(r'\b(?:GET|POST|PUT|DELETE|PATCH)\s+(?:https?://|/\w)', re.IGNORECASE)
+    _FILE_PATH_RE = re.compile(r'(?:/[\w.-]+){3,}')
+    _TELEGRAM_CMD_RE = re.compile(r'(?:send_message|sendMessage|api\.telegram)\S*.*', re.IGNORECASE)
 
     def _sanitize_for_tts(text: str) -> str:
-        """Strip code, URLs, commands, and markdown from text before TTS."""
+        """Strip code, URLs, commands, tool output, and markdown before TTS."""
         if not text:
             return text
         t = _CODE_BLOCK_RE.sub('', text)
@@ -250,6 +257,12 @@ async def entrypoint(ctx: JobContext):
         t = _TERMINAL_LINE_RE.sub('', t)
         t = _CURL_CMD_RE.sub('', t)
         t = _JSON_BLOCK_RE.sub('', t)
+        t = _TOOL_CALL_RE.sub('', t)
+        t = _API_RESPONSE_RE.sub('', t)
+        t = _PIPE_CMD_RE.sub('', t)
+        t = _HTTP_METHOD_RE.sub('', t)
+        t = _FILE_PATH_RE.sub('', t)
+        t = _TELEGRAM_CMD_RE.sub('', t)
         t = _MARKDOWN_HEADER_RE.sub('', t)
         t = _MARKDOWN_BOLD_RE.sub(r'\1', t)
         t = _MARKDOWN_LIST_RE.sub('', t)
@@ -346,6 +359,12 @@ async def entrypoint(ctx: JobContext):
     _turn_total: list[int] = [0]       # total turns requested
     _turn_remaining: list[int] = [0]   # turns left
     _turn_initiator: list[str] = [""]  # user who requested turns
+
+    # Echo demon fix: track when we last responded to ANY input.
+    # Agent-chat mention triggers are suppressed if we responded recently,
+    # preventing the cycle: human→agent→echo→mention→duplicate response.
+    _last_response_time: list[float] = [0.0]
+    _RESPONSE_DEDUP_WINDOW = 10.0  # seconds
 
     # Mutable container for identity
     _identity_ref: list[str] = [""]
@@ -1094,6 +1113,7 @@ async def entrypoint(ctx: JobContext):
         await _broadcast_thinking()
         response, preserve_error, already_spoken = await _get_spoken_response(text, sender)
         await _say_and_echo(response, preserve_error=preserve_error, already_spoken=already_spoken)
+        _last_response_time[0] = time.monotonic()
 
         # If turns remain, relay our response to trigger the other agent
         remaining = _turn_remaining[0]
@@ -1329,6 +1349,18 @@ async def entrypoint(ctx: JobContext):
             return
 
         now = time.monotonic()
+
+        # Echo demon fix: if we responded to ANY input recently (human or agent),
+        # suppress mention-triggered responses. This prevents the cycle:
+        # human speaks → we respond → our echo triggers other agent → they respond
+        # mentioning us → we respond AGAIN.
+        if now - _last_response_time[0] < _RESPONSE_DEDUP_WINDOW:
+            logger.debug(
+                f"[{agent_name}] Agent mention suppressed — responded "
+                f"{now - _last_response_time[0]:.1f}s ago"
+            )
+            return
+
         if not _can_continue_auto_agent_chain(now):
             logger.debug(f"[{agent_name}] Agent reply suppressed (chain limit reached)")
             return
@@ -1342,11 +1374,8 @@ async def entrypoint(ctx: JobContext):
         logger.info(f"[{agent_name}] Triggered by {sender_name} via {trigger} mention, will respond")
         await _wait_for_other_agent_idle(timeout=10.0)
         await asyncio.sleep(0.6)
-        await session.interrupt()
-        await _broadcast_thinking()
-        response, preserve_error, already_spoken = await _get_spoken_response(text, sender_name)
+        await _respond_and_maybe_relay(text, sender_name)
         _record_auto_agent_chain_turn(time.monotonic())
-        await _say_and_echo(response, preserve_error=preserve_error, already_spoken=already_spoken)
 
     def _handle_agent_chat(reader: rtc.TextStreamReader, sender_identity: str):
         asyncio.create_task(_handle_agent_chat_async(reader, sender_identity))
